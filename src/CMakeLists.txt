@@ -1,0 +1,45 @@
+# Register the shell application as the "main" ESP-IDF component.
+# PlatformIO generates the top-level project CMakeLists.txt automatically;
+# this file only needs to declare our sources, include dirs and dependencies.
+
+idf_component_register(
+    SRCS
+        "main.c"
+        "wifi.c"
+        "shell.c"
+        "commands.c"
+        "htop.c"
+        "sdcard.c"
+        "http_client.c"
+        "dmesg.c"
+        "camera.c"
+        "editor.c"
+        "fileserver.c"
+        "lang_python.c"
+        "lang_js.c"
+        "lang_c.c"
+    INCLUDE_DIRS
+        "."
+        "../include"
+    REQUIRES
+        nvs_flash
+        esp_wifi
+        esp_netif
+        esp_event
+        esp_timer
+        esp_hw_support
+        driver
+        vfs
+        fatfs
+        sdmmc
+        esp_http_client
+        esp_http_server
+        espressif__esp32-camera
+        nicolaielectronics__pocketpy
+        duktape
+        picoc
+        mbedtls
+        lwip
+    LDFRAGMENTS
+        "pocketpy.lf"
+)

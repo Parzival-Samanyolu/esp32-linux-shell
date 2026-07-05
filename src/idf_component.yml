@@ -1,0 +1,6 @@
+# Managed component dependencies (ESP-IDF component manager).
+# esp32-camera provides the OV2640 DVP driver used by camera.c.
+dependencies:
+  espressif/esp32-camera: "^2.0.0"
+  # pocketpy: portable Python 3.x interpreter (used by lang_python.c)
+  nicolaielectronics/pocketpy: "^2.0.0"

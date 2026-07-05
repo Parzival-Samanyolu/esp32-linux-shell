@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 Linux Shell — Deneyap WROVER-E</title>
+<meta name="description" content="A Linux-style TCP shell for the ESP32 (Deneyap WROVER-E): camera photo/video/stream, SD card, browser file manager, a nano editor, arrow-key history, and three embedded programming languages — Python, JavaScript and C.">
+<style>
+  :root{
+    --bg:#0a0e0a; --panel:#0f150f; --border:#1e2a1e;
+    --fg:#c8f7d0; --dim:#7fae87; --accent:#39ff88; --accent2:#66d9ff; --amber:#ffcf5c;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Roboto Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);font-family:var(--mono);
+    line-height:1.6;font-size:16px;
+    background-image:radial-gradient(1200px 500px at 50% -10%,rgba(57,255,136,.08),transparent 60%);
+  }
+  a{color:var(--accent2);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:960px;margin:0 auto;padding:0 20px}
+  header{padding:48px 0 24px;text-align:center;border-bottom:1px solid var(--border)}
+  pre.banner{
+    color:var(--accent);text-shadow:0 0 8px rgba(57,255,136,.5);
+    font-size:clamp(6px,2.1vw,16px);line-height:1.15;margin:0 auto;overflow-x:auto;
+    display:inline-block;text-align:left;
+  }
+  h1{font-size:1.6rem;margin:18px 0 6px;color:#fff;letter-spacing:.5px}
+  .tag{color:var(--dim);margin:0 0 18px}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:14px 0 4px}
+  .pill{border:1px solid var(--border);background:var(--panel);color:var(--dim);
+    padding:4px 10px;border-radius:999px;font-size:.78rem}
+  .pill b{color:var(--accent)}
+  .connect{margin:22px 0 8px}
+  .connect code{background:#000;border:1px solid var(--border);padding:10px 16px;border-radius:8px;
+    color:var(--accent);display:inline-block;box-shadow:0 0 20px rgba(57,255,136,.12)}
+  section{padding:40px 0;border-bottom:1px solid var(--border)}
+  h2{color:#fff;font-size:1.15rem;margin:0 0 4px}
+  h2 .pfx{color:var(--accent)}
+  .sub{color:var(--dim);margin:0 0 22px;font-size:.92rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .card h3{margin:0 0 6px;font-size:1rem;color:var(--accent)}
+  .card p{margin:0;color:var(--dim);font-size:.88rem}
+  .card .ic{font-size:1.3rem;margin-bottom:6px}
+  table{width:100%;border-collapse:collapse;font-size:.86rem;overflow:hidden;border-radius:10px}
+  .tblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
+  th{background:#0c120c;color:var(--fg)}
+  td:first-child{color:var(--accent)}
+  tr:last-child td{border-bottom:none}
+  .langs{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+  .term{background:#000;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .term .bar{background:#0c120c;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--dim);font-size:.75rem}
+  .term pre{margin:0;padding:12px;overflow-x:auto;font-size:.82rem;color:var(--fg)}
+  .term .p{color:var(--accent)}.term .o{color:var(--amber)}.term .c{color:var(--dim)}
+  .specs{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+  .spec{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px}
+  .spec .k{color:var(--dim);font-size:.72rem;text-transform:uppercase;letter-spacing:.5px}
+  .spec .v{color:var(--fg);font-size:.95rem;margin-top:2px}
+  footer{padding:34px 0 60px;text-align:center;color:var(--dim);font-size:.82rem}
+  .muted{color:var(--dim)}
+  .note{background:#0c120c;border-left:3px solid var(--amber);padding:10px 14px;border-radius:0 8px 8px 0;color:var(--dim);font-size:.86rem;margin-top:18px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+<pre class="banner">
+ ______  _____ _____ ____ ___
+|  ____|/ ____|  __ \___ \__ \
+| |__  | (___ | |__) |__) | ) |
+|  __|  \___ \|  ___/|__ < / /
+| |____ ____) | |    ___) / /_
+|______|_____/|_|   |____/____|
+</pre>
+    <h1>ESP32 Linux Shell</h1>
+    <p class="tag">A Linux-style terminal for a $6 microcontroller — with a camera, an SD card, and three programming languages.</p>
+    <div class="pills">
+      <span class="pill"><b>Deneyap</b> WROVER-E</span>
+      <span class="pill">ESP32-D0WD-V3 · <b>240&nbsp;MHz</b></span>
+      <span class="pill">8&nbsp;MB PSRAM @ <b>80&nbsp;MHz</b></span>
+      <span class="pill">ESP-IDF · C</span>
+    </div>
+    <div class="connect">
+      <div class="muted" style="font-size:.8rem;margin-bottom:8px">connect over Wi-Fi from any OS:</div>
+      <code>telnet 192.168.1.150 2222</code>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2><span class="pfx">$</span> whatis</h2>
+    <p class="sub">An ESP-IDF firmware that turns the board into a networked, Linux-flavoured terminal. Connect with <span class="muted">nc / telnet / PuTTY</span> and it behaves like a real shell — files live on a real SD card, HTTP requests are real, and every system stat comes from live hardware APIs. Then it goes further: a camera, a browser file manager, a text editor, and embedded interpreters for Python, JavaScript and C.</p>
+    <div class="grid">
+      <div class="card"><div class="ic">🐚</div><h3>Linux-style shell</h3><p>ls, cat, cd, echo, mkdir, rm, df, wget, curl, ping, free, uptime, ifconfig, dmesg, uname, reboot — plus arrow-key command history and a live <b>htop</b>.</p></div>
+      <div class="card"><div class="ic">📷</div><h3>Camera (OV2640)</h3><p><b>photo</b> — 1600×1200 JPEG to SD. <b>video</b> — records an MJPEG .avi clip. <b>stream</b> — live MJPEG in your browser.</p></div>
+      <div class="card"><div class="ic">💾</div><h3>SD storage</h3><p>FAT32 over SPI. Real files, real directories, real timestamps (NTP-synced clock).</p></div>
+      <div class="card"><div class="ic">🌐</div><h3>Browser file manager</h3><p><b>files</b> — a web UI to list, preview images, download and upload files to the card.</p></div>
+      <div class="card"><div class="ic">📝</div><h3>nano editor</h3><p>A full-screen text editor over telnet — arrow keys, ^O to save, ^X to exit.</p></div>
+      <div class="card"><div class="ic">🩺</div><h3>Diagnostics</h3><p><b>selftest</b> (PSRAM/SD/camera/Wi-Fi/heap), <b>stress</b> (2-core CPU + PSRAM), <b>neofetch</b>, <b>ps</b>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="pfx">$</span> run --lang</h2>
+    <p class="sub">Three real interpreters embedded in the firmware. Write scripts to the SD card and run them by extension: <span class="muted">run script.py · run app.js · run prog.c</span></p>
+    <div class="langs">
+      <div class="term">
+        <div class="bar">python — pocketpy (Python 3 subset)</div>
+        <pre><span class="p">&gt;&gt;&gt;</span> print(2**64)
+<span class="o">18446744073709551616</span>
+<span class="p">&gt;&gt;&gt;</span> [i*i for i in range(5)]
+<span class="o">[0, 1, 4, 9, 16]</span></pre>
+      </div>
+      <div class="term">
+        <div class="bar">js — Duktape (ES5/ES2015)</div>
+        <pre><span class="p">js&gt;</span> [1,2,3].map(x =&gt; x*x)
+<span class="o">1,4,9</span>
+<span class="p">js&gt;</span> JSON.stringify({ok:true})
+<span class="o">{"ok":true}</span></pre>
+      </div>
+      <div class="term">
+        <div class="bar">cc — PicoC (interpreted C)</div>
+        <pre><span class="c">// hello.c</span>
+int main(){ printf(<span class="o">"sum=%d\n"</span>,1+2+3); }
+<span class="c">→</span> <span class="o">sum=6</span></pre>
+      </div>
+    </div>
+    <div class="note">These are compact <b>embedded interpreters</b>, not full CPython/Node/GCC — the ESP32 can't host a real compiler or JVM. They run genuine (subset) Python, JavaScript and C directly on the chip.</div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="pfx">$</span> help</h2>
+    <p class="sub">A selection of the ~40 built-in commands.</p>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Command</th><th>What it does</th></tr>
+      <tr><td>photo [name]</td><td>Capture a full-resolution JPEG to the SD card</td></tr>
+      <tr><td>video [secs]</td><td>Record an MJPEG .avi clip to the SD card</td></tr>
+      <tr><td>stream start|stop</td><td>Live MJPEG video in a browser (port 81)</td></tr>
+      <tr><td>files start|stop</td><td>Browser file manager: view / download / upload (port 80)</td></tr>
+      <tr><td>nano &lt;file&gt;</td><td>Full-screen text editor</td></tr>
+      <tr><td>python | js | cc</td><td>Run Python / JavaScript / C (REPL or a file)</td></tr>
+      <tr><td>run &lt;file&gt;</td><td>Run a script by extension (.py / .js / .c)</td></tr>
+      <tr><td>htop</td><td>Live FreeRTOS task + memory monitor</td></tr>
+      <tr><td>selftest</td><td>Test PSRAM, SD, camera, Wi-Fi, heap</td></tr>
+      <tr><td>neofetch</td><td>System summary with an ASCII logo</td></tr>
+      <tr><td>ping &lt;host&gt;</td><td>Real ICMP ping</td></tr>
+      <tr><td>get / put &lt;file&gt;</td><td>Copy files off / onto the card as base64</td></tr>
+    </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="pfx">$</span> uname -a</h2>
+    <p class="sub">The hardware and stack.</p>
+    <div class="specs">
+      <div class="spec"><div class="k">Board</div><div class="v">Deneyap Kart (WROVER-E)</div></div>
+      <div class="spec"><div class="k">SoC</div><div class="v">ESP32-D0WD-V3, dual Xtensa LX6</div></div>
+      <div class="spec"><div class="k">CPU</div><div class="v">240 MHz</div></div>
+      <div class="spec"><div class="k">PSRAM</div><div class="v">8 MB @ 80 MHz (4 MB mapped)</div></div>
+      <div class="spec"><div class="k">Flash</div><div class="v">4 MB</div></div>
+      <div class="spec"><div class="k">Framework</div><div class="v">ESP-IDF (FreeRTOS), C</div></div>
+      <div class="spec"><div class="k">Camera</div><div class="v">OV2640, 1600×1200</div></div>
+      <div class="spec"><div class="k">Build</div><div class="v">PlatformIO</div></div>
+    </div>
+    <div class="note">Notable internals: each network client runs in its own FreeRTOS task; large buffers use PSRAM; the Python interpreter's static data is relocated to PSRAM via a linker fragment; the JS engine's heap uses custom PSRAM allocators; and the C interpreter ships with a bespoke ESP-IDF platform layer.</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Built on the Deneyap WROVER-E with ESP-IDF &amp; PlatformIO.<br>
+    <span class="muted">A Linux shell, a camera, and three languages — running on a microcontroller.</span>
+  </div>
+</footer>
+</body>
+</html>

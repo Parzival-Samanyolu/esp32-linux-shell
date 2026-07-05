@@ -1,0 +1,18 @@
+# PlatformIO build output
+.pio/
+
+# Local Python virtualenv used only for the PlatformIO toolchain
+.pio-venv/
+
+# Managed components are re-downloaded by the IDF component manager
+managed_components/
+
+# Generated sdkconfig (regenerated from sdkconfig.defaults)
+sdkconfig.deneyap_wrover
+sdkconfig.*.old
+
+# Secrets: real Wi-Fi credentials live here (use config.h.example as a template)
+include/config.h
+
+# macOS
+.DS_Store

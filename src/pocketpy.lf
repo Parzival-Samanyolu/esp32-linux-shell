@@ -1,0 +1,6 @@
+# Linker fragment: place the pocketpy interpreter's .bss in external PSRAM
+# instead of scarce internal DRAM (requires CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY).
+[mapping:pocketpy_extram]
+archive: libnicolaielectronics__pocketpy.a
+entries:
+    * (extram_bss)

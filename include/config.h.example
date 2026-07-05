@@ -1,0 +1,50 @@
+#pragma once
+
+// ============================================================================
+//  User configuration  —  copy this file to config.h and fill in your Wi-Fi.
+// ============================================================================
+
+// ---- Known Wi-Fi networks --------------------------------------------------
+// The board scans on boot and connects to whichever of these is in range with
+// the strongest signal. Add as many {SSID, PASSWORD} pairs as you like.
+#define WIFI_NETWORKS  { \
+    { "YOUR_WIFI_NAME", "YOUR_WIFI_PASSWORD" }, \
+    /* { "SECOND_SSID", "SECOND_PASSWORD" },   */ \
+}
+
+// Legacy single-network defines (referenced by a couple of log lines).
+#define WIFI_SSID    "YOUR_WIFI_NAME"
+#define WIFI_PASS    "YOUR_WIFI_PASSWORD"
+
+// TCP port the Linux-like shell listens on (nc <IP> 2222)
+#define SHELL_PORT   2222
+
+// ---- Static IP -------------------------------------------------------------
+// Fixed address so the board is always reachable at the same IP. Set
+// USE_STATIC_IP to 0 to fall back to DHCP (needed on a different subnet).
+#define USE_STATIC_IP    1
+#define STATIC_IP        "192.168.1.150"
+#define STATIC_GATEWAY   "192.168.1.1"
+#define STATIC_NETMASK   "255.255.255.0"
+#define STATIC_DNS       "8.8.8.8"
+
+// SD card FAT32 mount point
+#define SD_MOUNT     "/sdcard"
+
+// ---- SD card SPI wiring (Deneyap Kart / WROVER-E) -------------------------
+// The camera (OV2640) occupies the MOSI/MISO/SCK/D4 pads (GPIO5/18/19/21),
+// so the SD card lives on free pads instead. D13/GPIO12 is avoided (flash-
+// voltage strapping pin). CS is on D8/GPIO0 (a boot-strapping pin that must
+// idle HIGH — CS naturally does). MOSI/MISO/SCK on the D12/D14/D15 cluster.
+//   CS  -> D8  (GPIO0)    MOSI -> D12 (GPIO13)
+//   SCK -> D14 (GPIO14)   MISO -> D15 (GPIO27)
+#define SD_PIN_MOSI  13
+#define SD_PIN_MISO  27
+#define SD_PIN_CLK   14
+#define SD_PIN_CS    0
+
+// SPI bus used for the SD card (HSPI/SPI2 on the ESP32)
+#define SD_SPI_HOST  SPI2_HOST
+
+// Max simultaneous shell clients (each gets its own FreeRTOS task)
+#define SHELL_MAX_CLIENTS  4
