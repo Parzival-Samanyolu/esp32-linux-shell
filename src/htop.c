@@ -13,6 +13,15 @@
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 
+// ESP32-classic internal temperature sensor (deprecated ROM fn, returns °F).
+// Rough (±10 °C) but fine for a live "is it warming up?" readout.
+#if CONFIG_IDF_TARGET_ESP32
+extern uint8_t temprature_sens_read(void);
+static inline float chip_temp_c(void) { return (temprature_sens_read() - 32) / 1.8f; }
+#else
+static inline float chip_temp_c(void) { return 0.0f; }
+#endif
+
 #define BAR_WIDTH 20
 
 // Render a [####....] percentage bar into out.
@@ -60,8 +69,9 @@ static void htop_render(shell_ctx_t *ctx)
     uint32_t hh = secs / 3600, mm = (secs % 3600) / 60, ss = secs % 60;
 
     shell_printf(sock, "ESP32 htop - FreeRTOS Task Monitor\r\n");
-    shell_printf(sock, "Uptime: %02u:%02u:%02u  |  Cores: 2 @ 240MHz\r\n",
-                 (unsigned)hh, (unsigned)mm, (unsigned)ss);
+    shell_printf(sock, "Uptime: %02u:%02u:%02u  |  Cores: 2 @ 240MHz  |  Temp: ~%.0f\xc2\xb0""C  |  Tasks: %u\r\n",
+                 (unsigned)hh, (unsigned)mm, (unsigned)ss,
+                 chip_temp_c(), (unsigned)uxTaskGetNumberOfTasks());
     shell_printf(sock,
         "\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81"
         "\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81"
