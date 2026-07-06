@@ -477,7 +477,8 @@ static esp_err_t cmd_handler(httpd_req_t *req)
 static esp_err_t gui_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, gui_html, gui_html_len);
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");   // ~14 KB vs 42 KB raw
+    return httpd_resp_send(req, (const char *)gui_html_gz, gui_html_gz_len);
 }
 
 // ---- GET /api/ls?path=DIR : JSON directory listing ------------------------
