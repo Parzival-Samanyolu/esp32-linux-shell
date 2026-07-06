@@ -19,6 +19,16 @@
 // TCP port the Linux-like shell listens on (nc <IP> 2222)
 #define SHELL_PORT   2222
 
+// ---- Built-in Wi-Fi hotspot (SoftAP) --------------------------------------
+// The board ALWAYS broadcasts its own Wi-Fi network so you can reach it with no
+// router/internet — connect your laptop to this SSID and use 192.168.4.1.
+// It ALSO joins a known network above when one is in range (for internet/NTP).
+// Set USE_SOFTAP to 0 for client-only (old behaviour).
+#define USE_SOFTAP   1
+#define AP_SSID      "ESP32-Wifi"
+#define AP_PASS      "esp32_12345"   // 8+ chars for WPA2; "" = open network
+#define AP_IP        "192.168.4.1"   // fixed address of the board on its own AP
+
 // ---- Static IP -------------------------------------------------------------
 // Fixed address so the board is always reachable at the same IP. Set
 // USE_STATIC_IP to 0 to fall back to DHCP (needed on a different subnet).

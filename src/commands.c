@@ -973,20 +973,122 @@ static void stress_task(void *arg)
     vTaskDelete(NULL);
 }
 
+// ---- single-core throughput micro-benchmarks (return Mops/s) --------------
+// Each runs a dependent op chain for ~ms milliseconds so the compiler can't
+// fold it away, then reports millions of ops per second.
+static double bench_int(int ms)
+{
+    volatile uint32_t sink = 0;
+    uint32_t a = 12345;
+    uint64_t ops = 0;
+    int64_t t0 = esp_timer_get_time();
+    while (esp_timer_get_time() - t0 < (int64_t)ms * 1000) {
+        for (int i = 0; i < 20000; i++) a = a * 1664525u + 1013904223u;   // LCG
+        ops += 20000;
+    }
+    int64_t dt = esp_timer_get_time() - t0;
+    sink = a; (void)sink;
+    return (double)ops / (double)dt;   // ops/us == Mops/s
+}
+
+static double bench_f32(int ms)
+{
+    volatile float sink = 0;
+    float a = 1.0f;
+    uint64_t ops = 0;
+    int64_t t0 = esp_timer_get_time();
+    while (esp_timer_get_time() - t0 < (int64_t)ms * 1000) {
+        for (int i = 0; i < 20000; i++) a = a * 1.0000001f + 0.5f;        // hardware FPU
+        ops += 20000;
+        if (a > 1e30f) a = 1.0f;
+    }
+    int64_t dt = esp_timer_get_time() - t0;
+    sink = a; (void)sink;
+    return (double)ops / (double)dt;
+}
+
+static double bench_f64(int ms)
+{
+    volatile double sink = 0;
+    double a = 1.0;
+    uint64_t ops = 0;
+    int64_t t0 = esp_timer_get_time();
+    while (esp_timer_get_time() - t0 < (int64_t)ms * 1000) {
+        for (int i = 0; i < 20000; i++) a = a * 1.0000001 + 0.5;          // soft-float (slow)
+        ops += 20000;
+        if (a > 1e300) a = 1.0;
+    }
+    int64_t dt = esp_timer_get_time() - t0;
+    sink = a; (void)sink;
+    return (double)ops / (double)dt;
+}
+
+// ---- memory read/write bandwidth for a heap-caps region (MB/s) ------------
+static void mem_bench(shell_ctx_t *ctx, const char *label, uint32_t caps, size_t bytes)
+{
+    // Clamp to the largest contiguous free block (internal RAM is fragmented by
+    // the interpreters + Wi-Fi, so only ~30 KB may be available in one piece).
+    size_t big = heap_caps_get_largest_free_block(caps);
+    if (bytes + 8 * 1024 > big) bytes = (big > 12 * 1024) ? (big - 8 * 1024) : 0;
+    if (bytes < 4096) { shell_printf(ctx->sock, "  %-13s not enough free RAM to test\r\n", label); return; }
+    bytes &= ~3u;   // word-align the size
+
+    uint32_t *b = heap_caps_malloc(bytes, caps);
+    if (!b) { shell_printf(ctx->sock, "  %-13s alloc %u KB failed\r\n", label, (unsigned)(bytes / 1024)); return; }
+    size_t words = bytes / 4;
+
+    // Write bandwidth: fill the block over and over for ~300 ms.
+    int64_t t0 = esp_timer_get_time(); uint64_t wpasses = 0;
+    while (esp_timer_get_time() - t0 < 300000) {
+        for (size_t i = 0; i < words; i++) b[i] = (uint32_t)i;
+        wpasses++;
+    }
+    double wsec = (esp_timer_get_time() - t0) / 1e6;
+    double wmb = (wpasses * (double)bytes) / 1048576.0 / wsec;
+
+    // Read bandwidth: sum the block over and over.
+    volatile uint32_t vsink = 0; uint64_t rpasses = 0;
+    int64_t t1 = esp_timer_get_time();
+    while (esp_timer_get_time() - t1 < 300000) {
+        uint32_t s = 0;
+        for (size_t i = 0; i < words; i++) s += b[i];
+        vsink += s; rpasses++;
+    }
+    double rsec = (esp_timer_get_time() - t1) / 1e6;
+    double rmb = (rpasses * (double)bytes) / 1048576.0 / rsec;
+    (void)vsink;
+    free(b);
+
+    shell_printf(ctx->sock, "  %-13s write %5.0f MB/s   read %5.0f MB/s   (%u KB block)\r\n",
+                 label, wmb, rmb, (unsigned)(bytes / 1024));
+}
+
 static void do_stress(shell_ctx_t *ctx, int argc, char **argv)
 {
     int secs = (argc >= 2) ? atoi(argv[1]) : 8;
     if (secs < 1) secs = 1;
     if (secs > 60) secs = 60;
 
-    shell_printf(ctx->sock, "Stress test: %ds CPU (2 cores) + full PSRAM + SD I/O...\r\n", secs);
+    shell_printf(ctx->sock, "Stress test: CPU throughput + memory bandwidth + %ds 2-core burn...\r\n", secs);
 
     size_t heap_before = esp_get_free_heap_size();
     size_t frag_before = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
     float  temp_before = esp32_temp_c();
 
+    // ---- CPU throughput: one core, three number types --------------------
+    shell_printf(ctx->sock, "  [1/4] CPU throughput (single core)...\r\n");
+    double m_int = bench_int(250);
+    double m_f32 = bench_f32(250);
+    double m_f64 = bench_f64(250);
+
+    // ---- Memory bandwidth: internal SRAM vs external PSRAM ---------------
+    shell_printf(ctx->sock, "  [2/4] Memory bandwidth (internal RAM vs PSRAM)...\r\n");
+    mem_bench(ctx, "Internal RAM", MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT, 48 * 1024);
+    if (heap_caps_get_total_size(MALLOC_CAP_SPIRAM))
+        mem_bench(ctx, "PSRAM (ext)", MALLOC_CAP_SPIRAM, 256 * 1024);
+
     // ---- PSRAM sweep: grab as much as we can, pattern-write + verify -------
-    shell_printf(ctx->sock, "  [1/3] PSRAM sweep...\r\n");
+    shell_printf(ctx->sock, "  [3/4] PSRAM sweep...\r\n");
     size_t ps_tested = 0;
     #define PS_MAXBLK 8
     uint8_t *blocks[PS_MAXBLK] = {0};
@@ -1007,7 +1109,7 @@ static void do_stress(shell_ctx_t *ctx, int argc, char **argv)
     // ---- SD I/O burn: write + verify a multi-MB file ----------------------
     double sd_wmb = 0, sd_rmb = 0; size_t sd_bytes = 0;
     if (sdcard_mounted()) {
-        shell_printf(ctx->sock, "  [2/3] SD I/O burn...\r\n");
+        shell_printf(ctx->sock, "  [4/4] SD I/O burn + 2-core CPU burn...\r\n");
         const char *sp = SD_MOUNT "/.stress.tmp";
         const size_t TARGET = 2 * 1024 * 1024;      // 2 MB
         char *chunk = heap_caps_malloc(8192, MALLOC_CAP_SPIRAM);
@@ -1038,7 +1140,8 @@ static void do_stress(shell_ctx_t *ctx, int argc, char **argv)
     }
 
     // ---- CPU burn on both cores ------------------------------------------
-    shell_printf(ctx->sock, "  [3/3] CPU burn on both cores (%ds)...\r\n", secs);
+    if (!sdcard_mounted())
+        shell_printf(ctx->sock, "  [4/4] CPU burn on both cores (%ds)...\r\n", secs);
     stress_worker_t main_w = { .iters = 0, .run = true };
     stress_worker_t other_w = { .iters = 0, .run = true };
     int mycore = xPortGetCoreID();
@@ -1057,7 +1160,6 @@ static void do_stress(shell_ctx_t *ctx, int argc, char **argv)
 
     double mops_a = (double)main_w.iters  / (secs * 1e6);
     double mops_b = (double)other_w.iters / (secs * 1e6);
-    uint64_t total_iters = main_w.iters + other_w.iters;
 
     // Free PSRAM BEFORE measuring so the leak check compares like-for-like.
     for (int i = 0; i < nblk; i++) free(blocks[i]);
@@ -1066,9 +1168,11 @@ static void do_stress(shell_ctx_t *ctx, int argc, char **argv)
     float  temp_after = esp32_temp_c();
 
     shell_printf(ctx->sock, "----\r\n");
-    shell_printf(ctx->sock, "CPU:   %llu iters, %.1f Mops/s total  (core%d %.1f + core%d %.1f)\r\n",
-                 (unsigned long long)total_iters, mops_a + mops_b,
-                 mycore, mops_a, othercore, mops_b);
+    shell_printf(ctx->sock, "CPU 1-core: int %.0f Mops/s  |  float32 %.0f Mops/s (HW FPU)  |  float64 %.1f Mops/s (soft)\r\n",
+                 m_int, m_f32, m_f64);
+    shell_printf(ctx->sock, "  (float64 is slow by design: ESP32 has no 64-bit FPU, so it's emulated in software)\r\n");
+    shell_printf(ctx->sock, "CPU 2-core burn: %.1f Mops/s float64  (core%d %.1f + core%d %.1f)\r\n",
+                 mops_a + mops_b, mycore, mops_a, othercore, mops_b);
     shell_printf(ctx->sock, "PSRAM: %u KB swept + verified across %d blocks\r\n",
                  (unsigned)(ps_tested / 1024), nblk);
     if (sd_bytes)
