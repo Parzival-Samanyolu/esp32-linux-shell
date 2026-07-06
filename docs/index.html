@@ -76,17 +76,19 @@
 | |____ ____) | |    ___) / /_
 |______|_____/|_|   |____/____|
 </pre>
-    <h1>ESP32 Linux Shell</h1>
-    <p class="tag">A Linux-style terminal for a $6 microcontroller — with a camera, an SD card, and three programming languages.</p>
+    <h1>ESP32 Linux Shell + Web Desktop</h1>
+    <p class="tag">A Linux-style terminal <b>and a full windowed web-desktop OS</b> on a $6 microcontroller — with a camera, an SD card, three programming languages, GPIO control, games, and its own Wi-Fi hotspot.</p>
     <div class="pills">
       <span class="pill"><b>Deneyap</b> WROVER-E</span>
       <span class="pill">ESP32-D0WD-V3 · <b>240&nbsp;MHz</b></span>
       <span class="pill">8&nbsp;MB PSRAM @ <b>80&nbsp;MHz</b></span>
-      <span class="pill">ESP-IDF · C</span>
+      <span class="pill">ESP-IDF · C · <b>-O2</b></span>
     </div>
     <div class="connect">
-      <div class="muted" style="font-size:.8rem;margin-bottom:8px">connect over Wi-Fi from any OS:</div>
-      <code>telnet 192.168.1.150 2222</code>
+      <div class="muted" style="font-size:.8rem;margin-bottom:8px">no router needed — the board hosts its own Wi-Fi. Join <b>ESP32-Wifi</b>, then:</div>
+      <code>telnet 192.168.4.1 2222</code>
+      <div class="muted" style="font-size:.8rem;margin:10px 0 4px">…or open the graphical desktop in a browser:</div>
+      <code>http://192.168.4.1/gui</code>
     </div>
   </div>
 </header>
@@ -96,12 +98,41 @@
     <h2><span class="pfx">$</span> whatis</h2>
     <p class="sub">An ESP-IDF firmware that turns the board into a networked, Linux-flavoured terminal. Connect with <span class="muted">nc / telnet / PuTTY</span> and it behaves like a real shell — files live on a real SD card, HTTP requests are real, and every system stat comes from live hardware APIs. Then it goes further: a camera, a browser file manager, a text editor, and embedded interpreters for Python, JavaScript and C.</p>
     <div class="grid">
-      <div class="card"><div class="ic">🐚</div><h3>Linux-style shell</h3><p>ls, cat, cd, echo, mkdir, rm, df, wget, curl, ping, free, uptime, ifconfig, dmesg, uname, reboot — plus arrow-key command history and a live <b>htop</b>.</p></div>
+      <div class="card"><div class="ic">🖥️</div><h3>ESP32-OS web desktop</h3><p>A full graphical desktop in the browser at <b>/gui</b> — draggable windows, a taskbar &amp; start menu, and 10+ apps: files, terminal, editor, code runner, system monitor, GPIO panel, camera, games, paint and more.</p></div>
+      <div class="card"><div class="ic">📡</div><h3>Own Wi-Fi hotspot</h3><p>The board always broadcasts its own network (<b>ESP32-Wifi</b> · 192.168.4.1), so it works anywhere with no router — and still joins a known Wi-Fi when in range.</p></div>
+      <div class="card"><div class="ic">🐚</div><h3>Linux-style shell</h3><p>ls, cat, cp, mv, grep, wc, head, tail, find, du, hexdump, df, wget, curl, ping, free, uptime, ifconfig, dmesg — plus history and a live <b>htop</b> (with temperature).</p></div>
+      <div class="card"><div class="ic">💡</div><h3>GPIO &amp; LED control</h3><p><b>gpio</b> read/write/blink, <b>pwm</b>, and onboard-LED effects — <b>led breathe / pulse / rainbow</b> — with a pin guard that protects the camera/SD pins.</p></div>
       <div class="card"><div class="ic">📷</div><h3>Camera (OV2640)</h3><p><b>photo</b> — 1600×1200 JPEG to SD. <b>video</b> — records an MJPEG .avi clip. <b>stream</b> — live MJPEG in your browser.</p></div>
-      <div class="card"><div class="ic">💾</div><h3>SD storage</h3><p>FAT32 over SPI. Real files, real directories, real timestamps (NTP-synced clock).</p></div>
-      <div class="card"><div class="ic">🌐</div><h3>Browser file manager</h3><p><b>files</b> — a web UI to list, preview images, download and upload files to the card.</p></div>
-      <div class="card"><div class="ic">📝</div><h3>nano editor</h3><p>A full-screen text editor over telnet — arrow keys, ^O to save, ^X to exit.</p></div>
-      <div class="card"><div class="ic">🩺</div><h3>Diagnostics</h3><p><b>selftest</b> (PSRAM/SD/camera/Wi-Fi/heap), <b>stress</b> (2-core CPU + PSRAM), <b>neofetch</b>, <b>ps</b>.</p></div>
+      <div class="card"><div class="ic">🎮</div><h3>Games &amp; fun</h3><p>Snake, 2048, Tetris, Pong, Tic-Tac-Toe (perfect AI) &amp; Minesweeper in the desktop — plus terminal toys: <b>cmatrix</b>, <b>cowsay</b>, <b>fortune</b>.</p></div>
+      <div class="card"><div class="ic">🔳</div><h3>QR codes</h3><p><b>qr</b> prints a scannable QR right in the terminal (or on the desktop) — by default the hotspot login, so a phone can scan to connect.</p></div>
+      <div class="card"><div class="ic">💾</div><h3>SD storage + editor</h3><p>FAT32 over SPI with real files &amp; timestamps, a browser file manager, and a full-screen <b>nano</b> editor over telnet.</p></div>
+      <div class="card"><div class="ic">🩺</div><h3>Diagnostics</h3><p><b>selftest</b> (PSRAM span, SD speed, camera, GPIO, NTP, temp) and <b>stress</b> — CPU int/float throughput plus internal-RAM vs PSRAM bandwidth.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="pfx">$</span> open /gui</h2>
+    <p class="sub">A complete windowed desktop, served straight from the board and rendered in your browser — no app to install, no internet, works over the board's own hotspot. Everything is vanilla HTML/CSS/JS embedded in the firmware and <b>gzip-compressed</b> to ~14&nbsp;KB.</p>
+    <div class="term">
+      <div class="bar">ESP32-OS — web desktop</div>
+      <pre>┌─ Camera ──────[_][□][x]┐   ┌─ System Monitor ─┐
+│  ▓▓ live MJPEG ▓▓      │   │  heap ╱╲╱╲  psram │
+│  [Capture] [Record]   │   │  ▁▂▃▅▇ temp 24°C  │
+└───────────────────────┘   └──────────────────┘
+ ┌─ Terminal ─────[x]┐   ┌─ GPIO / LED ──[x]┐
+ │ root@esp32:~# ls  │   │ LED ▮▮▮▮ 128  🔴🟢🔵│
+ └───────────────────┘   └──────────────────┘
+[▦ Start]  Files  Camera  Terminal      🌡24° 📶 14:32</pre>
+    </div>
+    <div class="grid" style="margin-top:22px">
+      <div class="card"><div class="ic">🖥️</div><h3>Terminal</h3><p>Runs any shell command in a window, with history.</p></div>
+      <div class="card"><div class="ic">📁</div><h3>Files</h3><p>Icon grid of the SD — thumbnails, drag-drop upload, open, delete.</p></div>
+      <div class="card"><div class="ic">📊</div><h3>System Monitor</h3><p>Live canvas charts of heap, PSRAM &amp; temperature.</p></div>
+      <div class="card"><div class="ic">💡</div><h3>GPIO Panel</h3><p>Toggle switches, LED brightness slider, RGB colour picker, effects.</p></div>
+      <div class="card"><div class="ic">📝</div><h3>Editor &amp; Runner</h3><p>Edit/save files; write Python/JS/C and run it on the chip.</p></div>
+      <div class="card"><div class="ic">🎮</div><h3>Games + extras</h3><p>Snake, 2048, Tetris, Pong, Minesweeper, a Piano, Paint, a clock &amp; a calculator.</p></div>
     </div>
   </div>
 </section>
@@ -139,22 +170,23 @@ int main(){ printf(<span class="o">"sum=%d\n"</span>,1+2+3); }
 <section>
   <div class="wrap">
     <h2><span class="pfx">$</span> help</h2>
-    <p class="sub">A selection of the ~40 built-in commands.</p>
+    <p class="sub">A selection of the ~50 built-in commands.</p>
     <div class="tblwrap">
     <table>
       <tr><th>Command</th><th>What it does</th></tr>
+      <tr><td>files start|stop</td><td>Web file manager (port 80) — desktop lives at <b>/gui</b>, dashboard at /dash</td></tr>
       <tr><td>photo [name]</td><td>Capture a full-resolution JPEG to the SD card</td></tr>
       <tr><td>video [secs]</td><td>Record an MJPEG .avi clip to the SD card</td></tr>
       <tr><td>stream start|stop</td><td>Live MJPEG video in a browser (port 81)</td></tr>
-      <tr><td>files start|stop</td><td>Browser file manager: view / download / upload (port 80)</td></tr>
-      <tr><td>nano &lt;file&gt;</td><td>Full-screen text editor</td></tr>
       <tr><td>python | js | cc</td><td>Run Python / JavaScript / C (REPL or a file)</td></tr>
-      <tr><td>run &lt;file&gt;</td><td>Run a script by extension (.py / .js / .c)</td></tr>
-      <tr><td>htop</td><td>Live FreeRTOS task + memory monitor</td></tr>
-      <tr><td>selftest</td><td>Test PSRAM, SD, camera, Wi-Fi, heap</td></tr>
-      <tr><td>neofetch</td><td>System summary with an ASCII logo</td></tr>
-      <tr><td>ping &lt;host&gt;</td><td>Real ICMP ping</td></tr>
-      <tr><td>get / put &lt;file&gt;</td><td>Copy files off / onto the card as base64</td></tr>
+      <tr><td>gpio · pwm · led</td><td>Read/write pins, PWM, onboard-LED effects (breathe/pulse/rainbow)</td></tr>
+      <tr><td>qr [text]</td><td>Print a scannable QR (default: the hotspot Wi-Fi login)</td></tr>
+      <tr><td>snake · tictactoe</td><td>Playable ANSI games over telnet</td></tr>
+      <tr><td>grep · wc · head · tail · cp · mv · find · du</td><td>The Unix toolkit — on real SD files</td></tr>
+      <tr><td>nano &lt;file&gt;</td><td>Full-screen text editor</td></tr>
+      <tr><td>htop</td><td>Live FreeRTOS task + memory monitor (with temperature)</td></tr>
+      <tr><td>selftest · stress</td><td>Hardware self-test &amp; CPU/RAM benchmark</td></tr>
+      <tr><td>neofetch · ping · get/put</td><td>System summary · ICMP ping · base64 file transfer</td></tr>
     </table>
     </div>
   </div>
@@ -181,7 +213,7 @@ int main(){ printf(<span class="o">"sum=%d\n"</span>,1+2+3); }
 <footer>
   <div class="wrap">
     Built on the Deneyap WROVER-E with ESP-IDF &amp; PlatformIO.<br>
-    <span class="muted">A Linux shell, a camera, and three languages — running on a microcontroller.</span>
+    <span class="muted">A Linux shell, a web desktop, a camera, three languages, and its own Wi-Fi — running on a microcontroller.</span>
   </div>
 </footer>
 </body>
