@@ -21,6 +21,7 @@ idf_component_register(
         "fun.c"
         "gpio_cmd.c"
         "unixcmds.c"
+        "qrcmd.c"
     INCLUDE_DIRS
         "."
         "../include"
@@ -43,6 +44,7 @@ idf_component_register(
         nicolaielectronics__pocketpy
         duktape
         picoc
+        qrcodegen
         mbedtls
         lwip
     LDFRAGMENTS

@@ -10,9 +10,13 @@ it adds a **camera** (photo / video / live stream), a **browser file manager**, 
 
 ## Features
 
-- **Linux-style shell** — `ls`, `cat`, `cd`, `echo`, `mkdir`, `rm`, `df`, `wget`, `curl`,
-  `ping`, `free`, `uptime`, `ifconfig`, `dmesg`, `uname`, `reboot`, `whoami`, `date` (NTP),
-  `ps`, `neofetch`, plus **arrow-key history** and a live **`htop`**.
+- **Always-on Wi-Fi hotspot** — the board broadcasts its own network (`ESP32-Wifi`,
+  `192.168.4.1`) so the shell/dashboard work **anywhere with no router**, and *also* joins a
+  known Wi-Fi when in range (for internet/NTP). Boot never blocks on Wi-Fi.
+- **Linux-style shell** — `ls`, `cat`, `cd`, `echo`, `mkdir`, `rm`, `cp`, `mv`, `df`, `du`,
+  `grep`, `wc`, `head`, `tail`, `find`, `hexdump`, `history`, `wget`, `curl`, `ping`, `free`,
+  `uptime`, `ifconfig`, `dmesg`, `uname`, `reboot`, `whoami`, `date` (NTP), `ps`, `neofetch`,
+  plus **arrow-key history** and a live **`htop`** (with internal temperature).
 - **Camera (OV2640)** — `photo` (1600×1200 JPEG → SD), `video [secs]` (MJPEG `.avi` → SD),
   `stream start` (live MJPEG in a browser, port 81).
 - **SD card** — FAT32 over SPI, real files/dirs/timestamps.
@@ -20,14 +24,19 @@ it adds a **camera** (photo / video / live stream), a **browser file manager**, 
 - **nano** — full-screen editor over telnet (arrows, `^O` save, `^X` exit).
 - **Three languages** — `python` (pocketpy), `js` (Duktape), `cc` (PicoC). Run scripts from
   the SD card: `run script.py` / `run app.js` / `run prog.c`.
-- **GPIO / LED** — `gpio info|read|write|blink`, `pwm <pin> <0-255>`, `led on|off|blink`
-  (onboard LED on **GPIO4**), `rgb <r> <g> <b>`. A pin guard refuses camera/SD/PSRAM pins.
-- **Fun** — `cowsay`, `fortune`, `cmatrix` (Matrix rain), and a playable ANSI `snake`.
+- **GPIO / LED** — `gpio info|read|write|blink`, `pwm <pin> <0-255>`, `led
+  on|off|blink|breathe|pulse|rainbow` (onboard LED on **GPIO4**), `rgb <r> <g> <b>`. A pin
+  guard refuses camera/SD/PSRAM pins.
+- **Fun & games** — `cowsay`, `fortune`, `cmatrix` (Matrix rain), `snake`, and `tictactoe`
+  (vs a perfect minimax AI).
+- **QR code** — `qr [text]` prints a scannable QR in the terminal (default: the hotspot login,
+  so a phone can scan to connect).
 - **Web dashboard** — `files start`, then `http://<ip>/dash`: live camera stream, live
   system stats, and a browser command runner (destructive commands ask to confirm).
 - **Diagnostics** — expanded `selftest` (heap, PSRAM span, SD speed, camera, GPIO loopback,
-  NTP, partition, temp), `stress` (2-core CPU + full PSRAM sweep + SD I/O + fragmentation),
-  `get`/`put` (base64 file transfer).
+  NTP, partition, temp), `stress` (integer/float32/float64 CPU throughput + internal-RAM vs
+  PSRAM bandwidth + SD I/O + fragmentation), `get`/`put` (base64 file transfer).
+- **Built with `-O2`** for real performance (the ESP-IDF default `-Og` runs ~10× slower).
 
 ## Hardware
 
@@ -58,10 +67,14 @@ it adds a **camera** (photo / video / live stream), a **browser file manager**, 
    pio run -t upload
    pio device monitor          # prints the IP (static 192.168.1.150 by default)
    ```
-4. Connect: `telnet 192.168.1.150 2222`
+4. Connect, either way:
+   - **Over your Wi-Fi:** `telnet 192.168.1.150 2222` (or `http://192.168.1.150/dash`)
+   - **Over the board's own hotspot (works anywhere):** join Wi-Fi **`ESP32-Wifi`**
+     (password `esp32_12345`), then `telnet 192.168.4.1 2222` or `http://192.168.4.1/dash`.
+     Run `qr` on the shell to print a QR your phone can scan to join.
 
 > The first build downloads the ESP-IDF toolchain and managed components (esp32-camera,
-> pocketpy) — a few hundred MB. Duktape and PicoC are vendored under `components/`.
+> pocketpy) — a few hundred MB. Duktape, PicoC and qrcodegen are vendored under `components/`.
 
 ## Project layout
 

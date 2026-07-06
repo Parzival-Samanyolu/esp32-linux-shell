@@ -15,6 +15,7 @@
 #include "fun.h"
 #include "gpio_cmd.h"
 #include "unixcmds.h"
+#include "qrcmd.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1373,6 +1374,7 @@ static void do_help(shell_ctx_t *ctx)
         "  cmatrix           Matrix digital rain (telnet; any key stops)\r\n"
         "  snake             play snake (telnet/PuTTY; WASD/arrows, q quits)\r\n"
         "  tictactoe / ttt   play tic-tac-toe vs the ESP32 (telnet)\r\n"
+        "  qr [text]         print a scannable QR (default: hotspot Wi-Fi login)\r\n"
         "  htop              live task/memory monitor (q to quit)\r\n"
         "  dmesg             show the boot / system log\r\n"
         "  uname -a          show system information\r\n"
@@ -1453,6 +1455,7 @@ void cmd_execute(shell_ctx_t *ctx, char *line)
     else if (!strcmp(cmd, "du"))       ux_du(ctx, argc, argv);
     else if (!strcmp(cmd, "hexdump") || !strcmp(cmd, "xxd")) ux_hexdump(ctx, argc, argv);
     else if (!strcmp(cmd, "history"))  ux_history(ctx);
+    else if (!strcmp(cmd, "qr"))       do_qr(ctx, argc, argv);
     else if (!strcmp(cmd, "htop"))     htop_run(ctx);
     else if (!strcmp(cmd, "dmesg"))    dmesg_dump(ctx->sock);
     else if (!strcmp(cmd, "uname"))    do_uname(ctx, argc, argv);
