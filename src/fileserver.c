@@ -278,7 +278,7 @@ static void url_decode(char *s)
 }
 
 static const char *k_interactive[] = {
-    "htop","nano","snake","cmatrix","matrix","python","py","js","node",
+    "htop","nano","snake","cmatrix","matrix","tictactoe","ttt","python","py","js","node",
     "cc","gcc","run","put","get","arrows", NULL
 };
 static const char *k_destructive[] = { "rm","rmdir","reboot","format","mkfs","mv", NULL };

@@ -20,6 +20,7 @@ idf_component_register(
         "lang_c.c"
         "fun.c"
         "gpio_cmd.c"
+        "unixcmds.c"
     INCLUDE_DIRS
         "."
         "../include"

@@ -239,9 +239,87 @@ void gpio_pwm(shell_ctx_t *ctx, int argc, char **argv)
 // ---------------------------------------------------------------------------
 //  led on|off|blink  — convenience for the onboard LED (GPIO4)
 // ---------------------------------------------------------------------------
+// Configure one LEDC PWM channel on a pin (8-bit, 5 kHz, low-speed mode).
+static void led_pwm_channel(int pin, ledc_channel_t ch)
+{
+    ledc_channel_config_t c = {
+        .gpio_num = pin, .speed_mode = PWM_MODE, .channel = ch,
+        .timer_sel = PWM_TIMER, .duty = 0, .hpoint = 0,
+    };
+    ledc_channel_config(&c);
+}
+
+static void led_pwm_set(ledc_channel_t ch, int duty)
+{
+    ledc_set_duty(PWM_MODE, ch, duty);
+    ledc_update_duty(PWM_MODE, ch);
+}
+
 void gpio_led(shell_ctx_t *ctx, int argc, char **argv)
 {
     const char *a = (argc >= 2) ? argv[1] : "blink";
+
+    // --- PWM-based effects ---
+    if (!strcmp(a, "breathe") || !strcmp(a, "pulse") || !strcmp(a, "rainbow")) {
+        ledc_timer_config_t t = {
+            .speed_mode = PWM_MODE, .timer_num = PWM_TIMER,
+            .duty_resolution = LEDC_TIMER_8_BIT, .freq_hz = 5000, .clk_cfg = LEDC_AUTO_CLK,
+        };
+        ledc_timer_config(&t);
+
+        if (!strcmp(a, "breathe")) {
+            shell_printf(ctx->sock, "Breathing onboard LED (GPIO4)...\r\n");
+            led_pwm_channel(ONBOARD_LED_PIN, PWM_CHANNEL);
+            for (int cycle = 0; cycle < 4; cycle++) {
+                for (int d = 0;   d <= 255; d += 3) { led_pwm_set(PWM_CHANNEL, d); vTaskDelay(pdMS_TO_TICKS(8)); }
+                for (int d = 255; d >= 0;   d -= 3) { led_pwm_set(PWM_CHANNEL, d); vTaskDelay(pdMS_TO_TICKS(8)); }
+            }
+            led_pwm_set(PWM_CHANNEL, 0);
+        } else if (!strcmp(a, "pulse")) {
+            shell_printf(ctx->sock, "Pulsing onboard LED (GPIO4)...\r\n");
+            led_pwm_channel(ONBOARD_LED_PIN, PWM_CHANNEL);
+            for (int cycle = 0; cycle < 6; cycle++) {          // double-beat "heartbeat"
+                for (int k = 0; k < 2; k++) {
+                    for (int d = 0;   d <= 255; d += 15) { led_pwm_set(PWM_CHANNEL, d); vTaskDelay(pdMS_TO_TICKS(4)); }
+                    for (int d = 255; d >= 0;   d -= 15) { led_pwm_set(PWM_CHANNEL, d); vTaskDelay(pdMS_TO_TICKS(4)); }
+                }
+                vTaskDelay(pdMS_TO_TICKS(300));
+            }
+            led_pwm_set(PWM_CHANNEL, 0);
+        } else {  // rainbow — fade across the RGB LED (R=GPIO3, G=GPIO1, B=GPIO4)
+            shell_printf(ctx->sock,
+                "Rainbow on the onboard RGB LED... (red/green share UART0, serial may flicker)\r\n");
+            led_pwm_channel(3, LEDC_CHANNEL_2);                // R
+            led_pwm_channel(1, LEDC_CHANNEL_3);                // G
+            led_pwm_channel(ONBOARD_LED_PIN, LEDC_CHANNEL_4);  // B
+            // Sweep hue 0..360 twice; simple RGB wheel.
+            for (int pass = 0; pass < 2; pass++) {
+                for (int h = 0; h < 256; h += 2) {
+                    int r, g, b;
+                    int region = h / 43, rem = (h % 43) * 6;
+                    switch (region) {
+                        case 0:  r = 255;       g = rem;       b = 0;         break;
+                        case 1:  r = 255 - rem; g = 255;       b = 0;         break;
+                        case 2:  r = 0;         g = 255;       b = rem;       break;
+                        case 3:  r = 0;         g = 255 - rem; b = 255;       break;
+                        case 4:  r = rem;       g = 0;         b = 255;       break;
+                        default: r = 255;       g = 0;         b = 255 - rem; break;
+                    }
+                    led_pwm_set(LEDC_CHANNEL_2, r);
+                    led_pwm_set(LEDC_CHANNEL_3, g);
+                    led_pwm_set(LEDC_CHANNEL_4, b);
+                    vTaskDelay(pdMS_TO_TICKS(15));
+                }
+            }
+            led_pwm_set(LEDC_CHANNEL_2, 0);
+            led_pwm_set(LEDC_CHANNEL_3, 0);
+            led_pwm_set(LEDC_CHANNEL_4, 0);
+        }
+        shell_printf(ctx->sock, "done.\r\n");
+        return;
+    }
+
+    // --- simple on/off/blink ---
     pin_output(ONBOARD_LED_PIN);
     if (!strcmp(a, "on")) {
         gpio_set_level(ONBOARD_LED_PIN, 1);

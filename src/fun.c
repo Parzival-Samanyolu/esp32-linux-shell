@@ -281,3 +281,113 @@ void fun_snake(shell_ctx_t *ctx)
     else
         shell_printf(sock, "\033[%d;1H\033[0m\033[91mGAME OVER\033[0m — score: %d\r\n", r, score);
 }
+
+// ---------------------------------------------------------------------------
+//  tic-tac-toe — you (X) vs the ESP32 (O), which plays perfectly (minimax)
+// ---------------------------------------------------------------------------
+static const int TTT_LINES[8][3] = {
+    {0,1,2},{3,4,5},{6,7,8}, {0,3,6},{1,4,7},{2,5,8}, {0,4,8},{2,4,6}
+};
+
+static char ttt_winner(const char *b)
+{
+    for (int i = 0; i < 8; i++) {
+        char a = b[TTT_LINES[i][0]];
+        if (a != ' ' && a == b[TTT_LINES[i][1]] && a == b[TTT_LINES[i][2]]) return a;
+    }
+    for (int i = 0; i < 9; i++) if (b[i] == ' ') return 0;   // game continues
+    return 'D';                                              // draw
+}
+
+// Score from O's perspective; depth makes it prefer quicker wins / slower losses.
+static int ttt_minimax(char *b, char player, int depth)
+{
+    char w = ttt_winner(b);
+    if (w == 'O') return 10 - depth;
+    if (w == 'X') return depth - 10;
+    if (w == 'D') return 0;
+
+    int best = (player == 'O') ? -1000 : 1000;
+    for (int i = 0; i < 9; i++) {
+        if (b[i] != ' ') continue;
+        b[i] = player;
+        int s = ttt_minimax(b, player == 'O' ? 'X' : 'O', depth + 1);
+        b[i] = ' ';
+        if (player == 'O') { if (s > best) best = s; }
+        else               { if (s < best) best = s; }
+    }
+    return best;
+}
+
+static int ttt_best_move(char *b)
+{
+    int bi = -1, bs = -1000;
+    for (int i = 0; i < 9; i++) {
+        if (b[i] != ' ') continue;
+        b[i] = 'O';
+        int s = ttt_minimax(b, 'X', 0);
+        b[i] = ' ';
+        if (s > bs) { bs = s; bi = i; }
+    }
+    return bi;
+}
+
+static void ttt_render(int sock, const char *b)
+{
+    shell_send_all(sock, "\033[2J\033[H", 7);
+    shell_printf(sock, "\033[92mTic-Tac-Toe\033[0m  —  you are \033[93mX\033[0m, ESP32 is \033[91mO\033[0m\r\n");
+    shell_printf(sock, "Pick a cell 1-9 (q to quit)\r\n\r\n");
+    for (int row = 0; row < 3; row++) {
+        char cell[3][8];
+        for (int c = 0; c < 3; c++) {
+            int i = row * 3 + c;
+            if (b[i] == 'X')      snprintf(cell[c], sizeof(cell[c]), "\033[93mX\033[0m");
+            else if (b[i] == 'O') snprintf(cell[c], sizeof(cell[c]), "\033[91mO\033[0m");
+            else                  snprintf(cell[c], sizeof(cell[c]), "%d", i + 1);
+        }
+        shell_printf(sock, "  %s | %s | %s\r\n", cell[0], cell[1], cell[2]);
+        if (row < 2) shell_printf(sock, " ---+---+---\r\n");
+    }
+    shell_printf(sock, "\r\n");
+}
+
+void fun_tictactoe(shell_ctx_t *ctx)
+{
+    if (!ctx->char_mode) {
+        shell_printf(ctx->sock,
+            "tictactoe needs a char-mode terminal (telnet/PuTTY). On nc, type 'arrows' first.\r\n");
+        return;
+    }
+    int sock = ctx->sock;
+    char b[9]; memset(b, ' ', 9);
+
+    for (;;) {
+        ttt_render(sock, b);
+        char w = ttt_winner(b);
+        if (w) {
+            if (w == 'X')      shell_printf(sock, "\033[93mYou win!\033[0m (the AI let you — impressive!)\r\n");
+            else if (w == 'O') shell_printf(sock, "\033[91mESP32 wins.\033[0m Try again!\r\n");
+            else               shell_printf(sock, "Draw — well played.\r\n");
+            return;
+        }
+
+        // Player move.
+        int move = -1;
+        while (move < 0) {
+            int k = wait_key(sock, 120000);
+            if (k == -2 || k == 'q' || k == 'Q' || k == 0x03) {
+                shell_printf(sock, "\r\nGame quit.\r\n"); return;
+            }
+            if (k >= '1' && k <= '9') {
+                int idx = k - '1';
+                if (b[idx] == ' ') move = idx;
+            }
+        }
+        b[move] = 'X';
+
+        if (ttt_winner(b)) continue;      // player may have just won/filled
+
+        int cpu = ttt_best_move(b);
+        if (cpu >= 0) b[cpu] = 'O';
+    }
+}

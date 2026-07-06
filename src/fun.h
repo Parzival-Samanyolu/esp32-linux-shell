@@ -7,3 +7,4 @@ void fun_cowsay(shell_ctx_t *ctx, int argc, char **argv);
 void fun_fortune(shell_ctx_t *ctx);
 void fun_cmatrix(shell_ctx_t *ctx);
 void fun_snake(shell_ctx_t *ctx);
+void fun_tictactoe(shell_ctx_t *ctx);

@@ -14,6 +14,7 @@
 #include "cc.h"
 #include "fun.h"
 #include "gpio_cmd.h"
+#include "unixcmds.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1357,12 +1358,21 @@ static void do_help(shell_ctx_t *ctx)
         "  stress [secs]     stress CPU + PSRAM + SD I/O and report throughput\r\n"
         "  gpio <sub> ...    read/write/blink pins (gpio info for the map)\r\n"
         "  pwm <pin> <0-255> analog brightness on a pin (LEDC)\r\n"
-        "  led on|off|blink  drive the onboard LED (GPIO4)\r\n"
+        "  led on|off|blink|breathe|pulse|rainbow   onboard LED effects (GPIO4)\r\n"
         "  rgb <r> <g> <b>   drive the onboard RGB LED (0/1 each)\r\n"
+        "  grep [-in] <p> <f> print lines matching a pattern\r\n"
+        "  wc <file>         count lines, words, bytes\r\n"
+        "  head/tail [-n N]  first/last N lines of a file\r\n"
+        "  cp/mv <src> <dst> copy / move a file\r\n"
+        "  find [path] [name] list files recursively\r\n"
+        "  du [path]         disk usage of a tree\r\n"
+        "  hexdump <file>    hex + ASCII dump\r\n"
+        "  history           recent commands\r\n"
         "  cowsay <text>     an ASCII cow says your text\r\n"
         "  fortune           print a random programming quote\r\n"
         "  cmatrix           Matrix digital rain (telnet; any key stops)\r\n"
         "  snake             play snake (telnet/PuTTY; WASD/arrows, q quits)\r\n"
+        "  tictactoe / ttt   play tic-tac-toe vs the ESP32 (telnet)\r\n"
         "  htop              live task/memory monitor (q to quit)\r\n"
         "  dmesg             show the boot / system log\r\n"
         "  uname -a          show system information\r\n"
@@ -1387,6 +1397,8 @@ void cmd_execute(shell_ctx_t *ctx, char *line)
     // Skip leading whitespace / empty lines.
     while (*line == ' ' || *line == '\t') line++;
     if (*line == '\0') return;
+
+    ux_history_add(line);   // record before tokenize() mutates the buffer
 
     char *argv[MAX_ARGS];
     int argc = tokenize(line, argv);
@@ -1430,6 +1442,17 @@ void cmd_execute(shell_ctx_t *ctx, char *line)
     else if (!strcmp(cmd, "fortune"))  fun_fortune(ctx);
     else if (!strcmp(cmd, "cmatrix") || !strcmp(cmd, "matrix")) fun_cmatrix(ctx);
     else if (!strcmp(cmd, "snake"))    fun_snake(ctx);
+    else if (!strcmp(cmd, "tictactoe") || !strcmp(cmd, "ttt")) fun_tictactoe(ctx);
+    else if (!strcmp(cmd, "grep"))     ux_grep(ctx, argc, argv);
+    else if (!strcmp(cmd, "wc"))       ux_wc(ctx, argc, argv);
+    else if (!strcmp(cmd, "head"))     ux_head(ctx, argc, argv);
+    else if (!strcmp(cmd, "tail"))     ux_tail(ctx, argc, argv);
+    else if (!strcmp(cmd, "cp"))       ux_cp(ctx, argc, argv);
+    else if (!strcmp(cmd, "mv"))       ux_mv(ctx, argc, argv);
+    else if (!strcmp(cmd, "find"))     ux_find(ctx, argc, argv);
+    else if (!strcmp(cmd, "du"))       ux_du(ctx, argc, argv);
+    else if (!strcmp(cmd, "hexdump") || !strcmp(cmd, "xxd")) ux_hexdump(ctx, argc, argv);
+    else if (!strcmp(cmd, "history"))  ux_history(ctx);
     else if (!strcmp(cmd, "htop"))     htop_run(ctx);
     else if (!strcmp(cmd, "dmesg"))    dmesg_dump(ctx->sock);
     else if (!strcmp(cmd, "uname"))    do_uname(ctx, argc, argv);
