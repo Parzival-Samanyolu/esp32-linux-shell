@@ -21,6 +21,11 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_netif.h"
+#include "qrcodegen.h"
+
+// The web-desktop page. gui_html.h is auto-generated from src/gui.html (byte
+// array) — regenerate it after editing gui.html.
+#include "gui_html.h"
 
 static const char *TAG = "files";
 #define FS_PORT 80
@@ -451,6 +456,132 @@ static esp_err_t cmd_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// ---- GET /gui : the web desktop (embedded page) ---------------------------
+static esp_err_t gui_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_send(req, gui_html, gui_html_len);
+}
+
+// ---- GET /api/ls?path=DIR : JSON directory listing ------------------------
+static esp_err_t ls_handler(httpd_req_t *req)
+{
+    char q[160], rel[128] = {0};
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK)
+        httpd_query_key_value(q, "path", rel, sizeof(rel));
+    if (strstr(rel, "..")) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad path"); return ESP_FAIL; }
+
+    char dir[256];
+    if (rel[0] == '\0' || !strcmp(rel, "/")) snprintf(dir, sizeof(dir), "%s", SD_MOUNT);
+    else if (rel[0] == '/')                  snprintf(dir, sizeof(dir), "%s%s", SD_MOUNT, rel);
+    else                                     snprintf(dir, sizeof(dir), "%s/%s", SD_MOUNT, rel);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr_chunk(req, "[");
+    DIR *d = opendir(dir);
+    if (d) {
+        struct dirent *e; bool first = true; char item[400];
+        while ((e = readdir(d)) != NULL) {
+            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+            char full[320]; snprintf(full, sizeof(full), "%s/%s", dir, e->d_name);
+            struct stat st; long sz = 0; bool isdir = (e->d_type == DT_DIR);
+            if (stat(full, &st) == 0) { sz = (long)st.st_size; isdir = S_ISDIR(st.st_mode); }
+            snprintf(item, sizeof(item), "%s{\"name\":\"%s\",\"size\":%ld,\"dir\":%s}",
+                     first ? "" : ",", e->d_name, sz, isdir ? "true" : "false");
+            httpd_resp_sendstr_chunk(req, item);
+            first = false;
+        }
+        closedir(d);
+    }
+    httpd_resp_sendstr_chunk(req, "]");
+    httpd_resp_sendstr_chunk(req, NULL);
+    return ESP_OK;
+}
+
+// ---- POST /api/save : write a text file (path=..&body=..) ------------------
+static esp_err_t save_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/plain");
+    int total = req->content_len;
+    if (total <= 0 || total > (256 * 1024)) { httpd_resp_sendstr(req, "too big\n"); return ESP_OK; }
+    char *body = heap_caps_malloc(total + 1, MALLOC_CAP_SPIRAM);
+    if (!body) { httpd_resp_sendstr(req, "no mem\n"); return ESP_OK; }
+    int got = 0;
+    while (got < total) {
+        int r = httpd_req_recv(req, body + got, total - got);
+        if (r <= 0) { free(body); httpd_resp_sendstr(req, "recv error\n"); return ESP_OK; }
+        got += r;
+    }
+    body[got] = '\0';
+
+    // Split "name=<file>&body=<urlencoded>". We keep the name simple (no slashes).
+    char name[128] = {0};
+    httpd_query_key_value(body, "name", name, sizeof(name));
+    if (!safe_name(name)) { free(body); httpd_resp_sendstr(req, "bad name\n"); return ESP_OK; }
+
+    char *bpos = strstr(body, "body=");
+    const char *content = bpos ? bpos + 5 : "";
+    // URL-decode the content in place.
+    char *dec = malloc(strlen(content) + 1);
+    if (dec) {
+        char *o = dec; const char *s = content;
+        while (*s) {
+            if (*s == '%' && s[1] && s[2]) { int hi=hexval(s[1]),lo=hexval(s[2]);
+                if(hi>=0&&lo>=0){*o++=(char)(hi*16+lo);s+=3;continue;} }
+            if (*s == '+') { *o++ = ' '; s++; continue; }
+            *o++ = *s++;
+        }
+        *o = '\0';
+    }
+
+    char path[300]; snprintf(path, sizeof(path), "%s/%s", SD_MOUNT, name);
+    FILE *f = fopen(path, "wb");
+    if (f && dec) { fwrite(dec, 1, strlen(dec), f); fclose(f);
+        char msg[160]; snprintf(msg, sizeof(msg), "saved %s (%u bytes)\n", name, (unsigned)strlen(dec));
+        httpd_resp_sendstr(req, msg);
+    } else {
+        if (f) fclose(f);
+        httpd_resp_sendstr(req, "save failed (no SD?)\n");
+    }
+    free(dec); free(body);
+    return ESP_OK;
+}
+
+// ---- GET /api/qr?text=T : QR as a JSON bit-matrix -------------------------
+static esp_err_t qr_handler(httpd_req_t *req)
+{
+    char q[300], text[220] = {0};
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK)
+        httpd_query_key_value(q, "text", text, sizeof(text));
+    url_decode(text);
+    if (!text[0]) snprintf(text, sizeof(text), "WIFI:S:%s;T:WPA;P:%s;;", AP_SSID, AP_PASS);
+
+    uint8_t *qr = heap_caps_malloc(qrcodegen_BUFFER_LEN_MAX, MALLOC_CAP_SPIRAM);
+    uint8_t *tmp = heap_caps_malloc(qrcodegen_BUFFER_LEN_MAX, MALLOC_CAP_SPIRAM);
+    httpd_resp_set_type(req, "application/json");
+    if (!qr || !tmp ||
+        !qrcodegen_encodeText(text, tmp, qr, qrcodegen_Ecc_MEDIUM,
+                              qrcodegen_VERSION_MIN, 11, qrcodegen_Mask_AUTO, true)) {
+        httpd_resp_sendstr(req, "{\"size\":0,\"rows\":[]}");
+        free(qr); free(tmp); return ESP_OK;
+    }
+    int size = qrcodegen_getSize(qr);
+    char head[32]; snprintf(head, sizeof(head), "{\"size\":%d,\"rows\":[", size);
+    httpd_resp_sendstr_chunk(req, head);
+    char row[200];
+    for (int y = 0; y < size; y++) {
+        int p = 0;
+        row[p++] = (y ? ',' : ' '); row[p++] = '"';
+        for (int x = 0; x < size; x++) row[p++] = qrcodegen_getModule(qr, x, y) ? '1' : '0';
+        row[p++] = '"'; row[p] = '\0';
+        httpd_resp_sendstr_chunk(req, row);
+    }
+    httpd_resp_sendstr_chunk(req, "]}");
+    httpd_resp_sendstr_chunk(req, NULL);
+    free(qr); free(tmp);
+    return ESP_OK;
+}
+
 esp_err_t fileserver_start(void)
 {
     if (s_httpd) return ESP_OK;
@@ -472,6 +603,10 @@ esp_err_t fileserver_start(void)
     httpd_uri_t u_dash   = { .uri = "/dash",       .method = HTTP_GET,  .handler = dash_handler };
     httpd_uri_t u_stats  = { .uri = "/api/stats",  .method = HTTP_GET,  .handler = stats_handler };
     httpd_uri_t u_cmd    = { .uri = "/api/cmd",    .method = HTTP_POST, .handler = cmd_handler };
+    httpd_uri_t u_gui    = { .uri = "/gui",        .method = HTTP_GET,  .handler = gui_handler };
+    httpd_uri_t u_ls     = { .uri = "/api/ls",     .method = HTTP_GET,  .handler = ls_handler };
+    httpd_uri_t u_save   = { .uri = "/api/save",   .method = HTTP_POST, .handler = save_handler };
+    httpd_uri_t u_qr     = { .uri = "/api/qr",     .method = HTTP_GET,  .handler = qr_handler };
     httpd_register_uri_handler(s_httpd, &u_index);
     httpd_register_uri_handler(s_httpd, &u_dl);
     httpd_register_uri_handler(s_httpd, &u_del);
@@ -479,6 +614,10 @@ esp_err_t fileserver_start(void)
     httpd_register_uri_handler(s_httpd, &u_dash);
     httpd_register_uri_handler(s_httpd, &u_stats);
     httpd_register_uri_handler(s_httpd, &u_cmd);
+    httpd_register_uri_handler(s_httpd, &u_gui);
+    httpd_register_uri_handler(s_httpd, &u_ls);
+    httpd_register_uri_handler(s_httpd, &u_save);
+    httpd_register_uri_handler(s_httpd, &u_qr);
 
     dmesg_add("files: server started on tcp/%d", FS_PORT);
     return ESP_OK;

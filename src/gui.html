@@ -1,0 +1,431 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32-OS</title>
+<style>
+:root{--accent:#3b82f6;--bar:#11161d;--win:#1b2129;--winhead:#232b35;--text:#dbe4ee;--dim:#8fa0b3;--edge:#2c3542}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif;color:var(--text)}
+#desktop{position:fixed;inset:0;background:radial-gradient(1200px 800px at 70% -10%,#25406b 0%,#0b1017 55%,#070a0e 100%);user-select:none}
+/* boot splash */
+#boot{position:fixed;inset:0;background:#05070a;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .6s}
+#boot h1{font-size:2.2rem;letter-spacing:.15em;color:#cfe0ff;font-weight:700}
+#boot .sub{color:#5b6b80;margin-top:.4rem;font-size:.85rem}
+#boot .bar{margin-top:1.4rem;width:220px;height:4px;background:#1a2331;border-radius:3px;overflow:hidden}
+#boot .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3b82f6,#22d3ee);animation:load 1.6s ease forwards}
+@keyframes load{to{width:100%}}
+/* desktop icons */
+#icons{position:absolute;top:14px;left:14px;display:flex;flex-direction:column;flex-wrap:wrap;gap:6px;max-height:calc(100% - 60px)}
+.dicon{width:86px;height:84px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;color:#eaf1fb;font-size:.72rem;text-align:center;padding:6px}
+.dicon:hover{background:rgba(255,255,255,.09)}
+.dicon .gl{font-size:1.7rem;line-height:1}
+/* windows */
+.win{position:absolute;min-width:220px;min-height:140px;background:var(--win);border:1px solid var(--edge);border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.55);display:flex;flex-direction:column;overflow:hidden}
+.win.active{border-color:#3a5170;box-shadow:0 22px 60px rgba(0,0,0,.7)}
+.win .head{height:34px;background:var(--winhead);display:flex;align-items:center;gap:8px;padding:0 8px;cursor:move;flex:none}
+.win .head .t{font-size:.82rem;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.win .head .t .gl{margin-right:6px}
+.win .head .btn{width:14px;height:14px;border-radius:50%;cursor:pointer;border:none}
+.b-min{background:#f6c343}.b-max{background:#2ecc71}.b-close{background:#ff5f57}
+.win .body{flex:1;overflow:auto;position:relative;background:var(--win)}
+.win .grip{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 50%,#3a4657 50%)}
+/* taskbar */
+#taskbar{position:fixed;left:0;right:0;bottom:0;height:46px;background:rgba(12,17,23,.86);backdrop-filter:blur(10px);border-top:1px solid #202a36;display:flex;align-items:center;gap:6px;padding:0 8px;z-index:5000}
+#start{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:8px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer;font-size:.85rem}
+#start:hover{filter:brightness(1.1)}
+#tasklist{flex:1;display:flex;gap:6px;overflow:hidden}
+.tb{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:7px;background:#1a222c;color:#cdd8e5;cursor:pointer;font-size:.78rem;max-width:160px;white-space:nowrap;overflow:hidden}
+.tb.active{background:#28516f}
+#tray{display:flex;align-items:center;gap:12px;color:#aebccd;font-size:.78rem}
+#tray b{color:#eaf2fc;font-weight:600}
+/* start menu */
+#startmenu{position:fixed;left:8px;bottom:52px;width:340px;background:rgba(20,26,34,.97);border:1px solid #2a3542;border-radius:12px;padding:12px;z-index:6000;display:none;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+#startmenu.open{display:block}
+#startmenu h3{font-size:.72rem;color:var(--dim);margin:2px 4px 10px;text-transform:uppercase;letter-spacing:.08em}
+.smgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.smi{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 4px;border-radius:9px;cursor:pointer;font-size:.7rem;text-align:center}
+.smi:hover{background:rgba(255,255,255,.08)}
+.smi .gl{font-size:1.5rem}
+/* generic app UI */
+.pad{padding:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button.b,select,input[type=text],input[type=number]{font:inherit;font-size:.82rem;background:#0e141b;color:var(--text);border:1px solid #2c3644;border-radius:7px;padding:7px 10px}
+button.b{background:#233246;cursor:pointer}button.b:hover{background:#2b3f59}
+button.b.pri{background:var(--accent);color:#fff}
+.term{background:#05080c;color:#b6f0c4;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;height:100%;display:flex;flex-direction:column}
+.term .out{flex:1;overflow:auto;padding:8px;white-space:pre-wrap;word-break:break-word}
+.term .in{display:flex;border-top:1px solid #12202a;background:#070d13}
+.term .in span{padding:8px 4px 8px 8px;color:#4ea1ff}
+.term .in input{flex:1;background:transparent;border:none;color:#d7ffe6;font:inherit;padding:8px 8px 8px 2px;outline:none}
+.filegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;padding:12px}
+.file{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px;border-radius:9px;cursor:pointer;font-size:.68rem;text-align:center;word-break:break-word}
+.file:hover{background:rgba(255,255,255,.07)}
+.file .gl{font-size:1.7rem}.file img{width:52px;height:52px;object-fit:cover;border-radius:6px}
+.stat{display:flex;justify-content:space-between;font-size:.8rem;padding:4px 0;border-bottom:1px dotted #253040}
+.stat b{color:#bfe0ff}
+.sw{position:relative;width:44px;height:24px;background:#2a3544;border-radius:14px;cursor:pointer;transition:.15s;flex:none}
+.sw.on{background:var(--accent)}
+.sw i{position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.15s}
+.sw.on i{left:22px}
+textarea{width:100%;height:100%;background:#05080c;color:#d7e6f5;border:none;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.8rem;padding:10px;resize:none;outline:none}
+canvas{display:block}
+.muted{color:var(--dim);font-size:.78rem}
+a{color:#6ab0ff}
+</style></head>
+<body>
+<div id="desktop">
+  <div id="icons"></div>
+</div>
+<div id="startmenu"><h3>Applications</h3><div class="smgrid" id="smgrid"></div></div>
+<div id="taskbar">
+  <div id="start"><span>▦</span> Start</div>
+  <div id="tasklist"></div>
+  <div id="tray"><span id="tr-temp">🌡 –</span><span id="tr-wifi">📶 –</span><b id="tr-clock">--:--</b></div>
+</div>
+<div id="boot"><h1>ESP32-OS</h1><div class="sub">Deneyap WROVER-E · web desktop</div><div class="bar"><i></i></div></div>
+
+<script>
+"use strict";
+const HOST = location.hostname;
+const $ = (s,r=document)=>r.querySelector(s);
+const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+
+// ---------- API ----------
+const API = {
+  async cmd(c,confirm){const b=new URLSearchParams();b.append('cmd',c);if(confirm)b.append('confirm','1');
+    const r=await fetch('/api/cmd',{method:'POST',body:b});return await r.text();},
+  async stats(){return await (await fetch('/api/stats')).json();},
+  async ls(p){return await (await fetch('/api/ls?path='+encodeURIComponent(p||''))).json();},
+  async save(n,b){const d=new URLSearchParams();d.append('name',n);d.append('body',b);
+    return await (await fetch('/api/save',{method:'POST',body:d})).text();},
+  async qr(t){return await (await fetch('/api/qr?text='+encodeURIComponent(t||''))).json();},
+  dl(n){return '/dl?f='+encodeURIComponent(n);}
+};
+const fmtB=b=>b>1048576?(b/1048576).toFixed(1)+' MB':b>1024?(b/1024).toFixed(0)+' KB':b+' B';
+
+// ---------- Window manager ----------
+let zTop=10;
+const openWins={};
+function focusWin(w){zTop++;w.el.style.zIndex=zTop;
+  document.querySelectorAll('.win').forEach(x=>x.classList.remove('active'));
+  w.el.classList.add('active');
+  document.querySelectorAll('.tb').forEach(x=>x.classList.toggle('active',x.dataset.id===w.id));}
+function makeWin(id,title,icon,w,h){
+  const wx=40+Object.keys(openWins).length*26, wy=40+Object.keys(openWins).length*22;
+  const e=el('div','win');
+  e.style.left=wx+'px';e.style.top=wy+'px';e.style.width=w+'px';e.style.height=h+'px';
+  e.innerHTML=`<div class="head"><span class="t"><span class="gl">${icon}</span>${title}</span>
+    <button class="btn b-min" title="minimize"></button><button class="btn b-max" title="maximize"></button>
+    <button class="btn b-close" title="close"></button></div><div class="body"></div><div class="grip"></div>`;
+  $('#desktop').appendChild(e);
+  const win={id,el:e,body:e.querySelector('.body')};
+  openWins[id]=win;
+  e.addEventListener('mousedown',()=>focusWin(win));
+  // drag
+  const head=e.querySelector('.head');
+  head.addEventListener('mousedown',ev=>{if(ev.target.classList.contains('btn'))return;
+    const ox=ev.clientX-e.offsetLeft, oy=ev.clientY-e.offsetTop;
+    const mv=m=>{e.style.left=Math.max(0,m.clientX-ox)+'px';e.style.top=Math.max(0,Math.min(window.innerHeight-80,m.clientY-oy))+'px';};
+    const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);};
+    document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);});
+  // resize
+  e.querySelector('.grip').addEventListener('mousedown',ev=>{ev.stopPropagation();
+    const sx=ev.clientX,sy=ev.clientY,sw=e.offsetWidth,sh=e.offsetHeight;
+    const mv=m=>{e.style.width=Math.max(220,sw+m.clientX-sx)+'px';e.style.height=Math.max(140,sh+m.clientY-sy)+'px';};
+    const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);};
+    document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);});
+  let max=false,prev=null;
+  e.querySelector('.b-close').onclick=()=>closeWin(id);
+  e.querySelector('.b-min').onclick=()=>{e.style.display='none';};
+  e.querySelector('.b-max').onclick=()=>{max=!max;if(max){prev=[e.style.left,e.style.top,e.style.width,e.style.height];
+    e.style.left='0px';e.style.top='0px';e.style.width='100%';e.style.height=(window.innerHeight-46)+'px';}
+    else if(prev){[e.style.left,e.style.top,e.style.width,e.style.height]=prev;}};
+  // taskbar button
+  const tb=el('div','tb',`<span>${icon}</span>${title}`);tb.dataset.id=id;
+  tb.onclick=()=>{if(e.style.display==='none'){e.style.display='flex';focusWin(win);}else focusWin(win);};
+  $('#tasklist').appendChild(tb);win.tb=tb;
+  focusWin(win);
+  return win;
+}
+function closeWin(id){const w=openWins[id];if(!w)return;w.el.remove();w.tb&&w.tb.remove();
+  if(w.timer)clearInterval(w.timer);delete openWins[id];}
+function openApp(id){const a=APPS.find(x=>x.id===id);if(!a)return;$('#startmenu').classList.remove('open');
+  if(openWins[id]){openWins[id].el.style.display='flex';focusWin(openWins[id]);return;}
+  const w=makeWin(id,a.name,a.icon,a.w||460,a.h||320);
+  try{a.render(w);}catch(e){w.body.innerHTML='<div class=pad>App error: '+e.message+'</div>';}}
+
+// ---------- Apps ----------
+const APPS=[];
+function reg(a){APPS.push(a);}
+
+// Terminal
+reg({id:'term',name:'Terminal',icon:'🖥️',w:560,h:360,render(w){
+  w.body.innerHTML=`<div class="term"><div class="out"></div><div class="in"><span>root@esp32:~#</span><input autofocus></div></div>`;
+  const out=w.body.querySelector('.out'),inp=w.body.querySelector('.in input');
+  const hist=[];let hi=0;
+  out.textContent='ESP32-OS terminal. Type a command (e.g. neofetch, free, ls, gpio info).\n\n';
+  inp.focus();
+  inp.onkeydown=async ev=>{
+    if(ev.key==='Enter'){const c=inp.value.trim();if(!c)return;hist.push(c);hi=hist.length;
+      out.textContent+='root@esp32:~# '+c+'\n';inp.value='';
+      const r=await API.cmd(c);out.textContent+=r.replace(/\r/g,'')+'\n';out.scrollTop=out.scrollHeight;}
+    else if(ev.key==='ArrowUp'){if(hi>0){hi--;inp.value=hist[hi]||'';}}
+    else if(ev.key==='ArrowDown'){if(hi<hist.length-1){hi++;inp.value=hist[hi]||'';}else{hi=hist.length;inp.value='';}}
+  };
+  w.body.onclick=()=>inp.focus();
+}});
+
+// File Explorer
+reg({id:'files',name:'Files',icon:'📁',w:560,h:400,render(w){
+  let cwd='';
+  const bar=el('div','row');bar.style.padding='8px';
+  const path=el('span','muted');
+  const grid=el('div','filegrid');
+  const up=el('button','b','⬆ up'),refresh=el('button','b','⟳'),mkdir=el('button','b','＋ folder'),
+        upl=el('button','b pri','⬆ upload');
+  bar.append(up,refresh,mkdir,upl,path);
+  w.body.append(bar,grid);
+  const file=document.createElement('input');file.type='file';file.style.display='none';w.body.append(file);
+  async function load(){path.textContent='/sdcard/'+cwd;grid.innerHTML='<div class=pad>loading…</div>';
+    let items;try{items=await API.ls(cwd);}catch(e){grid.innerHTML='<div class=pad>error (no SD?)</div>';return;}
+    grid.innerHTML='';
+    items.sort((a,b)=>(b.dir-a.dir)||a.name.localeCompare(b.name));
+    items.forEach(it=>{const f=el('div','file');
+      const isimg=/\.(jpe?g|png|gif|bmp)$/i.test(it.name);
+      f.innerHTML=(it.dir?'<div class="gl">📁</div>':isimg?`<img src="${API.dl((cwd?cwd+'/':'')+it.name)}">`:'<div class="gl">📄</div>')
+        +`<div>${it.name}</div>`+(it.dir?'':`<div class=muted>${fmtB(it.size)}</div>`);
+      f.ondblclick=()=>{if(it.dir){cwd=cwd?cwd+'/'+it.name:it.name;load();}
+        else if(/\.(txt|log|md|csv|py|js|c|h|json|cfg|ini)$/i.test(it.name)){openApp('editor');setTimeout(()=>window.EDITOR_OPEN&&window.EDITOR_OPEN(it.name),200);}
+        else window.open(API.dl((cwd?cwd+'/':'')+it.name),'_blank');};
+      f.oncontextmenu=e=>{e.preventDefault();if(confirm('Delete '+it.name+'?')){API.cmd('rm '+(cwd?cwd+'/':'')+it.name,true).then(load);}};
+      grid.append(f);});}
+  up.onclick=()=>{cwd=cwd.split('/').slice(0,-1).join('');load();};
+  refresh.onclick=load;
+  mkdir.onclick=()=>{const n=prompt('New folder name');if(n){API.cmd('mkdir '+(cwd?cwd+'/':'')+n).then(load);}};
+  upl.onclick=()=>file.click();
+  file.onchange=async()=>{const fd=new FormData();fd.append('f',file.files[0]);
+    await fetch('/upload',{method:'POST',body:fd});load();};
+  w.body.ondragover=e=>{e.preventDefault();};
+  w.body.ondrop=async e=>{e.preventDefault();if(!e.dataTransfer.files[0])return;
+    const fd=new FormData();fd.append('f',e.dataTransfer.files[0]);await fetch('/upload',{method:'POST',body:fd});load();};
+  load();
+}});
+
+// Text Editor
+reg({id:'editor',name:'Editor',icon:'📝',w:560,h:420,render(w){
+  const bar=el('div','row');bar.style.padding='8px';
+  const name=el('input');name.type='text';name.placeholder='filename.txt';name.style.flex='1';
+  const openb=el('button','b','open'),saveb=el('button','b pri','💾 save');
+  bar.append(name,openb,saveb);
+  const ta=el('textarea');ta.spellcheck=false;
+  w.body.style.display='flex';w.body.style.flexDirection='column';
+  w.body.append(bar,ta);
+  async function open(n){name.value=n;try{ta.value=await (await fetch(API.dl(n))).text();}catch(e){ta.value='';}}
+  window.EDITOR_OPEN=open;
+  openb.onclick=()=>{const n=prompt('File to open (on SD)');if(n)open(n);};
+  saveb.onclick=async()=>{if(!name.value)return alert('enter a filename');
+    const r=await API.save(name.value,ta.value);alert(r.trim());};
+}});
+
+// Code Runner
+reg({id:'runner',name:'Code Runner',icon:'▶️',w:560,h:420,render(w){
+  const bar=el('div','row');bar.style.padding='8px';
+  const lang=el('select');lang.innerHTML='<option value=py>Python</option><option value=js>JavaScript</option><option value=c>C</option>';
+  const run=el('button','b pri','▶ Run');
+  bar.append(lang,run,el('span','muted','writes a temp file on SD and runs it'));
+  const ta=el('textarea');ta.spellcheck=false;ta.value='print("hello from the ESP32")';
+  const out=el('pre');out.style.cssText='margin:0;padding:10px;background:#05080c;color:#adfaad;font-family:ui-monospace,monospace;font-size:.78rem;height:130px;overflow:auto;white-space:pre-wrap';
+  w.body.style.display='flex';w.body.style.flexDirection='column';
+  w.body.append(bar,ta,out);
+  lang.onchange=()=>{ta.value=lang.value==='py'?'print("hello from the ESP32")':
+    lang.value==='js'?'print("hello from JS");':'#include <stdio.h>\nint main(){printf("hello from C\\n");return 0;}';};
+  run.onclick=async()=>{const f='_run.'+lang.value;out.textContent='saving + running…';
+    await API.save(f,ta.value);const r=await API.cmd('run '+f);out.textContent=r.replace(/\r/g,'');};
+}});
+
+// System Monitor
+reg({id:'monitor',name:'System Monitor',icon:'📊',w:520,h:400,render(w){
+  w.body.innerHTML=`<div class=pad><canvas width="480" height="150" style="width:100%;background:#05080c;border-radius:8px"></canvas>
+    <div id=mstats style="margin-top:10px"></div>
+    <div class=muted style="margin-top:8px">heap (green) · psram (blue) · temp (orange)</div></div>`;
+  const cv=w.body.querySelector('canvas'),ctx=cv.getContext('2d');
+  const H={heap:[],ps:[],temp:[]};const MAX=60;
+  function draw(){ctx.clearRect(0,0,cv.width,cv.height);
+    const series=[['heap','#22c55e',3200000],['ps','#3b82f6',4000000],['temp','#f59e0b',80]];
+    series.forEach(([k,col,mx])=>{const a=H[k];if(a.length<2)return;ctx.strokeStyle=col;ctx.lineWidth=1.6;ctx.beginPath();
+      a.forEach((v,i)=>{const x=i/(MAX-1)*cv.width,y=cv.height-(v/mx)*cv.height*0.95-2;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();});}
+  async function tick(){let s;try{s=await API.stats();}catch(e){return;}
+    H.heap.push(s.heap_free);H.ps.push(s.psram_free);H.temp.push(0);
+    Object.values(H).forEach(a=>{while(a.length>MAX)a.shift();});
+    // temp from cmd? stats has none; approximate via selftest is heavy — read from tray temp value
+    H.temp[H.temp.length-1]=window.LAST_TEMP||24;
+    draw();
+    $('#mstats',w.body).innerHTML=
+      `<div class=stat><span>Heap free</span><b>${fmtB(s.heap_free)} / ${fmtB(s.heap_total)}</b></div>`+
+      `<div class=stat><span>PSRAM free</span><b>${fmtB(s.psram_free)} / ${fmtB(s.psram_total)}</b></div>`+
+      `<div class=stat><span>SD free</span><b>${fmtB(s.sd_free)} / ${fmtB(s.sd_total)}</b></div>`+
+      `<div class=stat><span>Camera</span><b>${s.cam}</b></div>`+
+      `<div class=stat><span>IP</span><b>${s.ip}</b></div>`+
+      `<div class=stat><span>Uptime</span><b>${Math.floor(s.uptime/3600)}h ${Math.floor(s.uptime%3600/60)}m ${s.uptime%60}s</b></div>`;}
+  tick();w.timer=setInterval(tick,1500);
+}});
+
+// GPIO Control
+reg({id:'gpio',name:'GPIO / LED',icon:'💡',w:480,h:440,render(w){
+  w.body.innerHTML=`<div class=pad>
+   <h3 style="font-size:.85rem;margin-bottom:8px">Onboard LED (GPIO4)</h3>
+   <div class=row><button class="b" data-c="led on">On</button><button class="b" data-c="led off">Off</button>
+     <button class="b" data-c="led blink">Blink</button><button class="b" data-c="led breathe">Breathe</button>
+     <button class="b" data-c="led pulse">Pulse</button><button class="b" data-c="led rainbow">Rainbow</button></div>
+   <div class=row style="margin-top:12px"><span class=muted>Brightness</span>
+     <input type=range id=bri min=0 max=255 value=128 style="flex:1"></div>
+   <div class=row style="margin-top:12px"><span class=muted>RGB color</span>
+     <input type=color id=col value="#3b82f6"><button class="b" id=setcol>Set</button></div>
+   <h3 style="font-size:.85rem;margin:16px 0 8px">Pins</h3>
+   <div id=pins></div>
+   <pre id=gout class=muted style="margin-top:10px;white-space:pre-wrap"></pre></div>`;
+  const gout=$('#gout',w.body);
+  const say=t=>{gout.textContent=t.replace(/\r/g,'').trim();};
+  w.body.querySelectorAll('button[data-c]').forEach(b=>b.onclick=async()=>{say('…');say(await API.cmd(b.dataset.c));});
+  $('#bri',w.body).oninput=async e=>{say(await API.cmd('pwm 4 '+e.target.value));};
+  $('#setcol',w.body).onclick=async()=>{const v=$('#col',w.body).value;
+    const r=parseInt(v.substr(1,2),16)>127?1:0,g=parseInt(v.substr(3,2),16)>127?1:0,b=parseInt(v.substr(5,2),16)>127?1:0;
+    say(await API.cmd(`rgb ${r} ${g} ${b}`));};
+  // pin toggles for a couple of safe pins
+  const pins=$('#pins',w.body);
+  [4].forEach(p=>{const row=el('div','row');row.style.marginBottom='6px';
+    const sw=el('div','sw','<i></i>');let on=false;
+    sw.onclick=async()=>{on=!on;sw.classList.toggle('on',on);say(await API.cmd('gpio write '+p+' '+(on?1:0)));};
+    row.append(el('span','muted','GPIO'+p),sw);pins.append(row);});
+  API.cmd('gpio info').then(say);
+}});
+
+// Camera
+reg({id:'camera',name:'Camera',icon:'📷',w:520,h:440,render(w){
+  w.body.innerHTML=`<div class=pad>
+    <img id=cam style="width:100%;border-radius:8px;background:#000" alt="camera stream">
+    <div class=row style="margin-top:10px"><button class="b pri" id=snap>📸 Capture</button>
+      <button class="b" id=rec>⏺ Record 5s</button><button class="b" id=stopc>Stop stream</button></div>
+    <pre id=cout class=muted style="margin-top:8px;white-space:pre-wrap"></pre></div>`;
+  const cam=$('#cam',w.body),cout=$('#cout',w.body);
+  API.cmd('stream start').then(()=>{cam.src='http://'+HOST+':81/stream';});
+  $('#snap',w.body).onclick=async()=>{cout.textContent='capturing…';cout.textContent=(await API.cmd('photo')).replace(/\r/g,'');};
+  $('#rec',w.body).onclick=async()=>{cout.textContent='recording 5s…';cout.textContent=(await API.cmd('video 5')).replace(/\r/g,'');};
+  $('#stopc',w.body).onclick=async()=>{cam.src='';await API.cmd('stream stop');cout.textContent='stream stopped';};
+}});
+
+// Settings / About (with QR)
+reg({id:'settings',name:'Settings',icon:'⚙️',w:460,h:440,render(w){
+  w.body.innerHTML=`<div class=pad>
+    <h3 style="font-size:.9rem;margin-bottom:8px">About this device</h3>
+    <div id=about class=muted>loading…</div>
+    <h3 style="font-size:.9rem;margin:16px 0 8px">Join the hotspot</h3>
+    <canvas id=qr width=180 height=180 style="background:#fff;border-radius:8px"></canvas>
+    <div class=muted id=qrtxt style="margin-top:6px"></div>
+    <div class=row style="margin-top:16px"><button class="b" id=reboot>⟲ Reboot board</button></div></div>`;
+  API.cmd('uname -a').then(u=>{API.stats().then(s=>{
+    $('#about',w.body).innerHTML=`${u.replace(/\r/g,'')}<br>IP: ${s.ip} · Camera: ${s.cam}<br>Heap: ${fmtB(s.heap_free)} free · PSRAM: ${fmtB(s.psram_free)} free`;});});
+  API.qr('').then(q=>{const cv=$('#qr',w.body),ctx=cv.getContext('2d');
+    if(!q.size)return;const m=Math.floor(cv.width/(q.size+8)),off=Math.floor((cv.width-m*q.size)/2);
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle='#000';
+    q.rows.forEach((r,y)=>{for(let x=0;x<r.length;x++)if(r[x]==='1')ctx.fillRect(off+x*m,off+y*m,m,m);});
+    $('#qrtxt',w.body).textContent='Scan to join "'+(window.AP_SSID||'ESP32-Wifi')+'"';});
+  $('#reboot',w.body).onclick=()=>{if(confirm('Reboot the board? You will disconnect.'))API.cmd('reboot',true);};
+}});
+
+// Games
+reg({id:'games',name:'Games',icon:'🎮',w:420,h:460,render(w){
+  const menu=el('div','pad');menu.innerHTML='<h3 style="margin-bottom:10px">Pick a game</h3>';
+  const games={Snake:snakeGame,'2048':g2048,'Tic-Tac-Toe':tttGame,Minesweeper:mineGame};
+  const g=el('div','row');
+  Object.keys(games).forEach(k=>{const b=el('button','b pri',k);b.onclick=()=>{w.body.innerHTML='';
+    const back=el('button','b','← games');back.style.margin='8px';back.onclick=()=>{w.body.innerHTML='';w.body.append(menu);};
+    w.body.append(back);games[k](w.body);};g.append(b);});
+  menu.append(g);w.body.append(menu);
+}});
+
+// ---------- Games impl ----------
+function snakeGame(root){const cv=el('canvas');cv.width=300;cv.height=300;cv.style.cssText='margin:8px;background:#05080c;border-radius:8px';
+  const info=el('div','muted');info.style.margin='0 8px';info.textContent='Arrow keys / WASD. Score: 0';root.append(cv,info);
+  const ctx=cv.getContext('2d'),N=15,S=cv.width/N;let snake=[[7,7]],dir=[1,0],food=[3,3],score=0,dead=false;
+  function key(e){const k=e.key;if(k==='ArrowUp'||k==='w')dir=[0,-1];else if(k==='ArrowDown'||k==='s')dir=[0,1];
+    else if(k==='ArrowLeft'||k==='a')dir=[-1,0];else if(k==='ArrowRight'||k==='d')dir=[1,0];}
+  document.addEventListener('keydown',key);
+  const iv=setInterval(()=>{if(dead)return;const h=[snake[0][0]+dir[0],snake[0][1]+dir[1]];
+    if(h[0]<0||h[1]<0||h[0]>=N||h[1]>=N||snake.some(s=>s[0]===h[0]&&s[1]===h[1])){dead=true;info.textContent='Game over! Score: '+score+' — reopen to retry';clearInterval(iv);document.removeEventListener('keydown',key);return;}
+    snake.unshift(h);if(h[0]===food[0]&&h[1]===food[1]){score++;info.textContent='Score: '+score;food=[Math.floor(Math.random()*N),Math.floor(Math.random()*N)];}else snake.pop();
+    ctx.fillStyle='#05080c';ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle='#ef4444';ctx.fillRect(food[0]*S,food[1]*S,S-1,S-1);
+    ctx.fillStyle='#22c55e';snake.forEach(s=>ctx.fillRect(s[0]*S,s[1]*S,S-1,S-1));},120);}
+function g2048(root){const cv=el('div');cv.style.cssText='display:grid;grid-template-columns:repeat(4,64px);gap:6px;margin:12px;';
+  const info=el('div','muted');info.style.margin='0 12px';info.textContent='Arrow keys to merge. Score: 0';root.append(info,cv);
+  let g=Array(16).fill(0),score=0;const cells=[];for(let i=0;i<16;i++){const c=el('div');c.style.cssText='height:64px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem';cells.push(c);cv.append(c);}
+  const col=v=>v?['#334','#7c5','#5c9','#59c','#95c','#c59','#c95','#c55','#fa3','#fd3','#3fd'][Math.log2(v)]||'#fff':'#161c24';
+  function draw(){g.forEach((v,i)=>{cells[i].textContent=v||'';cells[i].style.background=col(v);cells[i].style.color=v>4?'#fff':'#333';});info.textContent='Score: '+score;}
+  function add(){const e=[];g.forEach((v,i)=>!v&&e.push(i));if(!e.length)return;g[e[Math.floor(Math.random()*e.length)]]=Math.random()<.9?2:4;}
+  function slide(r){r=r.filter(x=>x);for(let i=0;i<r.length-1;i++)if(r[i]===r[i+1]){r[i]*=2;score+=r[i];r.splice(i+1,1);}while(r.length<4)r.push(0);return r;}
+  function move(d){const b4=g.join();for(let i=0;i<4;i++){let line=[0,1,2,3].map(j=>d==='L'||d==='R'?g[i*4+j]:g[j*4+i]);
+    if(d==='R'||d==='D')line.reverse();line=slide(line);if(d==='R'||d==='D')line.reverse();
+    for(let j=0;j<4;j++){if(d==='L'||d==='R')g[i*4+j]=line[j];else g[j*4+i]=line[j];}}
+    if(g.join()!==b4){add();draw();}}
+  function key(e){const m={ArrowLeft:'L',ArrowRight:'R',ArrowUp:'U',ArrowDown:'D'}[e.key];if(m){e.preventDefault();move(m);}}
+  document.addEventListener('keydown',key);add();add();draw();}
+function tttGame(root){const wrap=el('div');wrap.style.cssText='display:grid;grid-template-columns:repeat(3,72px);gap:5px;margin:14px';
+  const info=el('div','muted');info.style.margin='0 14px 8px';info.textContent='You are X. Click a cell.';root.append(info,wrap);
+  let b=Array(9).fill(''),over=false;const cells=[];
+  const LINES=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  function win(bd){for(const[a,c,d]of LINES)if(bd[a]&&bd[a]===bd[c]&&bd[a]===bd[d])return bd[a];return bd.every(x=>x)?'D':'';}
+  function mm(bd,pl){const w=win(bd);if(w==='O')return 10;if(w==='X')return -10;if(w==='D')return 0;
+    let best=pl==='O'?-99:99;for(let i=0;i<9;i++)if(!bd[i]){bd[i]=pl;const s=mm(bd,pl==='O'?'X':'O');bd[i]='';best=pl==='O'?Math.max(best,s):Math.min(best,s);}return best;}
+  function cpu(){let bi=-1,bs=-99;for(let i=0;i<9;i++)if(!b[i]){b[i]='O';const s=mm(b,'X');b[i]='';if(s>bs){bs=s;bi=i;}}if(bi>=0)b[bi]='O';}
+  function draw(){cells.forEach((c,i)=>{c.textContent=b[i];c.style.color=b[i]==='X'?'#fbbf24':'#ef4444';});const w=win(b);
+    if(w){over=true;info.textContent=w==='D'?'Draw!':w==='X'?'You win!':'ESP32 wins.';}}
+  for(let i=0;i<9;i++){const c=el('div');c.style.cssText='height:72px;background:#161c24;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:700;cursor:pointer';
+    c.onclick=()=>{if(over||b[i])return;b[i]='X';if(!win(b))cpu();draw();};cells.push(c);wrap.append(c);}
+  draw();}
+function mineGame(root){const N=9,M=10;const wrap=el('div');wrap.style.cssText=`display:grid;grid-template-columns:repeat(${N},28px);gap:2px;margin:12px`;
+  const info=el('div','muted');info.style.margin='0 12px 8px';info.textContent='Left: reveal · Right: flag';root.append(info,wrap);
+  let mines=new Set(),rev=new Set(),flag=new Set(),over=false;
+  while(mines.size<M)mines.add(Math.floor(Math.random()*N*N));
+  const adj=i=>{let n=0,r=Math.floor(i/N),c=i%N;for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<N&&nc>=0&&nc<N&&mines.has(nr*N+nc))n++;}return n;}
+  const cells=[];
+  function reveal(i){if(rev.has(i)||flag.has(i)||over)return;rev.add(i);if(mines.has(i)){over=true;info.textContent='💥 Boom! Reopen to retry';mines.forEach(m=>cells[m].textContent='💣');return;}
+    const a=adj(i);if(a===0){let r=Math.floor(i/N),c=i%N;for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<N&&nc>=0&&nc<N)reveal(nr*N+nc);}}draw();}
+  function draw(){cells.forEach((c,i)=>{if(flag.has(i)){c.textContent='🚩';c.style.background='#243';}
+    else if(rev.has(i)){const a=adj(i);c.textContent=a||'';c.style.background='#0e141b';c.style.color=['','#6cf','#6f6','#f66','#f9f','#fc6'][a]||'#fff';}
+    else{c.textContent='';c.style.background='#2a3544';}});
+    if(rev.size===N*N-M&&!over){over=true;info.textContent='🎉 You cleared it!';}}
+  for(let i=0;i<N*N;i++){const c=el('div');c.style.cssText='width:28px;height:28px;background:#2a3544;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:.8rem;cursor:pointer';
+    c.onclick=()=>reveal(i);c.oncontextmenu=e=>{e.preventDefault();if(rev.has(i))return;flag.has(i)?flag.delete(i):flag.add(i);draw();};cells.push(c);wrap.append(c);}
+  draw();}
+
+// Paint
+reg({id:'paint',name:'Paint',icon:'🎨',w:480,h:420,render(w){
+  const bar=el('div','row');bar.style.padding='8px';
+  const col=el('input');col.type='color';col.value='#3b82f6';
+  const size=el('input');size.type='range';size.min=1;size.max=20;size.value=4;
+  const clr=el('button','b','Clear'),sv=el('button','b pri','Save PNG');
+  bar.append(el('span','muted','color'),col,el('span','muted','size'),size,clr,sv);
+  const cv=el('canvas');cv.width=440;cv.height=300;cv.style.cssText='margin:8px;background:#fff;border-radius:8px;cursor:crosshair;touch-action:none';
+  w.body.append(bar,cv);const ctx=cv.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
+  let draw=false;const pos=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height];};
+  cv.onmousedown=e=>{draw=true;const[x,y]=pos(e);ctx.beginPath();ctx.moveTo(x,y);};
+  cv.onmousemove=e=>{if(!draw)return;const[x,y]=pos(e);ctx.strokeStyle=col.value;ctx.lineWidth=size.value;ctx.lineCap='round';ctx.lineTo(x,y);ctx.stroke();};
+  window.addEventListener('mouseup',()=>draw=false);
+  clr.onclick=()=>{ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);};
+  sv.onclick=()=>{const a=document.createElement('a');a.href=cv.toDataURL();a.download='drawing.png';a.click();};
+}});
+
+// ---------- Desktop wiring ----------
+function buildIcons(){const ic=$('#icons'),sm=$('#smgrid');
+  APPS.forEach(a=>{const d=el('div','dicon',`<span class="gl">${a.icon}</span><span>${a.name}</span>`);d.ondblclick=()=>openApp(a.id);ic.append(d);
+    const s=el('div','smi',`<span class="gl">${a.icon}</span><span>${a.name}</span>`);s.onclick=()=>openApp(a.id);sm.append(s);});}
+$('#start').onclick=()=>$('#startmenu').classList.toggle('open');
+document.addEventListener('click',e=>{if(!e.target.closest('#startmenu')&&!e.target.closest('#start'))$('#startmenu').classList.remove('open');});
+async function tray(){const c=new Date();$('#tr-clock').textContent=(''+c.getHours()).padStart(2,'0')+':'+(''+c.getMinutes()).padStart(2,'0');
+  try{const s=await API.stats();$('#tr-wifi').textContent='📶 '+s.ip;}catch(e){$('#tr-wifi').textContent='📶 –';}}
+// temp comes from htop-style read; poll via a lightweight cmd occasionally
+async function trayTemp(){try{const r=await API.cmd('date');}catch(e){} }
+function boot(){buildIcons();tray();setInterval(tray,5000);
+  setTimeout(()=>{const b=$('#boot');b.style.opacity='0';setTimeout(()=>b.remove(),600);openApp('monitor');},1700);}
+boot();
+</script>
+</body></html>
