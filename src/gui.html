@@ -88,6 +88,8 @@ a{color:#6ab0ff}
 const HOST = location.hostname;
 const $ = (s,r=document)=>r.querySelector(s);
 const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+// HTML-escape untrusted strings (filenames) before putting them in innerHTML.
+const esc = s => (''+s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 // ---------- API ----------
 const API = {
@@ -191,8 +193,8 @@ reg({id:'files',name:'Files',icon:'📁',w:560,h:400,render(w){
     items.sort((a,b)=>(b.dir-a.dir)||a.name.localeCompare(b.name));
     items.forEach(it=>{const f=el('div','file');
       const isimg=/\.(jpe?g|png|gif|bmp)$/i.test(it.name);
-      f.innerHTML=(it.dir?'<div class="gl">📁</div>':isimg?`<img src="${API.dl((cwd?cwd+'/':'')+it.name)}">`:'<div class="gl">📄</div>')
-        +`<div>${it.name}</div>`+(it.dir?'':`<div class=muted>${fmtB(it.size)}</div>`);
+      f.innerHTML=(it.dir?'<div class="gl">📁</div>':isimg?`<img src="${encodeURI(API.dl((cwd?cwd+'/':'')+it.name))}">`:'<div class="gl">📄</div>')
+        +`<div>${esc(it.name)}</div>`+(it.dir?'':`<div class=muted>${fmtB(it.size)}</div>`);
       f.ondblclick=()=>{if(it.dir){cwd=cwd?cwd+'/'+it.name:it.name;load();}
         else if(/\.(txt|log|md|csv|py|js|c|h|json|cfg|ini)$/i.test(it.name)){openApp('editor');setTimeout(()=>window.EDITOR_OPEN&&window.EDITOR_OPEN(it.name),200);}
         else window.open(API.dl((cwd?cwd+'/':'')+it.name),'_blank');};

@@ -53,13 +53,30 @@ static bool is_image(const char *name)
     return strncmp(m, "image/", 6) == 0;
 }
 
-// Reject path traversal; only allow a bare filename under SD_MOUNT.
+// Reject path traversal; only allow a bare filename under SD_MOUNT. Rejects
+// path separators, "..", a leading dot, and control characters.
 static bool safe_name(const char *name)
 {
     if (!name || !*name) return false;
+    if (name[0] == '.')     return false;   // no dotfiles / "." / ".."
     if (strstr(name, "..")) return false;
     if (strchr(name, '/'))  return false;
+    if (strchr(name, '\\')) return false;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++)
+        if (*p < 0x20 || *p == 0x7f) return false;
     return true;
+}
+
+// Escape a string for embedding inside a JSON double-quoted value.
+static void json_escape(const char *in, char *out, size_t n)
+{
+    size_t o = 0;
+    for (const unsigned char *p = (const unsigned char *)in; *p && o + 7 < n; p++) {
+        if (*p == '"' || *p == '\\') { out[o++] = '\\'; out[o++] = *p; }
+        else if (*p < 0x20) { o += snprintf(out + o, n - o, "\\u%04x", *p); }
+        else out[o++] = *p;
+    }
+    out[o] = '\0';
 }
 
 // ---- GET / : directory listing --------------------------------------------
@@ -486,8 +503,9 @@ static esp_err_t ls_handler(httpd_req_t *req)
             char full[320]; snprintf(full, sizeof(full), "%s/%s", dir, e->d_name);
             struct stat st; long sz = 0; bool isdir = (e->d_type == DT_DIR);
             if (stat(full, &st) == 0) { sz = (long)st.st_size; isdir = S_ISDIR(st.st_mode); }
+            char ename[280]; json_escape(e->d_name, ename, sizeof(ename));
             snprintf(item, sizeof(item), "%s{\"name\":\"%s\",\"size\":%ld,\"dir\":%s}",
-                     first ? "" : ",", e->d_name, sz, isdir ? "true" : "false");
+                     first ? "" : ",", ename, sz, isdir ? "true" : "false");
             httpd_resp_sendstr_chunk(req, item);
             first = false;
         }
