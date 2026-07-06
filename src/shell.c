@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <unistd.h>
 
@@ -22,10 +23,82 @@ static const char *TAG = "shell";
 static volatile int s_client_count;
 
 // ---------------------------------------------------------------------------
+//  Output capture — lets the web dashboard run a command through cmd_execute()
+//  and collect its output. A "capture fd" is a negative sentinel: any shell
+//  output to a sock < 0 is appended to the matching buffer instead of send().
+//  Real lwIP sockets are always >= 0, so the two never collide.
+// ---------------------------------------------------------------------------
+#define CAP_SLOTS   4
+#define CAP_BASE    1000            // fd = -(CAP_BASE + slot)
+
+typedef struct {
+    bool    used;
+    char   *buf;
+    size_t  len, cap;
+} cap_slot_t;
+
+static cap_slot_t s_caps[CAP_SLOTS];
+
+int shell_capture_begin(void)
+{
+    for (int i = 0; i < CAP_SLOTS; i++) {
+        if (!s_caps[i].used) {
+            s_caps[i].cap = 8192;
+            s_caps[i].buf = heap_caps_malloc(s_caps[i].cap, MALLOC_CAP_SPIRAM);
+            if (!s_caps[i].buf) s_caps[i].buf = malloc(s_caps[i].cap);
+            if (!s_caps[i].buf) return -1;
+            s_caps[i].len  = 0;
+            s_caps[i].buf[0] = '\0';
+            s_caps[i].used = true;
+            return -(CAP_BASE + i);
+        }
+    }
+    return -1;   // none free
+}
+
+char *shell_capture_end(int fd, size_t *len_out)
+{
+    int slot = -fd - CAP_BASE;
+    if (slot < 0 || slot >= CAP_SLOTS || !s_caps[slot].used) {
+        if (len_out) *len_out = 0;
+        return NULL;
+    }
+    char *b = s_caps[slot].buf;
+    if (len_out) *len_out = s_caps[slot].len;
+    s_caps[slot].used = false;
+    s_caps[slot].buf  = NULL;
+    s_caps[slot].len  = s_caps[slot].cap = 0;
+    return b;   // caller frees
+}
+
+static int capture_append(int fd, const char *data, size_t len)
+{
+    int slot = -fd - CAP_BASE;
+    if (slot < 0 || slot >= CAP_SLOTS || !s_caps[slot].used) return 0;
+    cap_slot_t *s = &s_caps[slot];
+    if (s->len + len + 1 > s->cap) {
+        size_t ncap = s->cap ? s->cap : 8192;
+        while (ncap < s->len + len + 1) ncap *= 2;
+        if (ncap > 512 * 1024) ncap = 512 * 1024;      // hard cap on captured output
+        if (s->len + len + 1 > ncap) len = ncap - s->len - 1;   // truncate
+        char *nb = heap_caps_realloc(s->buf, ncap, MALLOC_CAP_SPIRAM);
+        if (!nb) nb = realloc(s->buf, ncap);
+        if (!nb) return 0;
+        s->buf = nb; s->cap = ncap;
+    }
+    if (len == 0) return 0;
+    memcpy(s->buf + s->len, data, len);
+    s->len += len;
+    s->buf[s->len] = '\0';
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
 //  I/O helpers
 // ---------------------------------------------------------------------------
 int shell_send_all(int sock, const char *data, size_t len)
 {
+    if (sock < 0) return capture_append(sock, data, len);   // capture mode
     size_t sent = 0;
     while (sent < len) {
         int n = send(sock, data + sent, len - sent, 0);
@@ -52,6 +125,7 @@ int shell_printf(int sock, const char *fmt, ...)
 
 int shell_read_line(int sock, char *buf, size_t maxlen)
 {
+    if (sock < 0) { if (maxlen) buf[0] = '\0'; return -1; }   // capture fd: no input
     size_t idx = 0;
     while (idx < maxlen - 1) {
         unsigned char c;
@@ -79,6 +153,7 @@ int shell_read_line(int sock, char *buf, size_t maxlen)
 int shell_prompt_read(shell_ctx_t *ctx, const char *prompt, char *buf, size_t maxlen)
 {
     int sock = ctx->sock;
+    if (sock < 0) { if (maxlen) buf[0] = '\0'; return -1; }   // capture fd: no input
     shell_send_all(sock, prompt, strlen(prompt));
 
     if (!ctx->char_mode) {

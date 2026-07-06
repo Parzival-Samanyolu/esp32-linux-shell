@@ -20,7 +20,14 @@ it adds a **camera** (photo / video / live stream), a **browser file manager**, 
 - **nano** — full-screen editor over telnet (arrows, `^O` save, `^X` exit).
 - **Three languages** — `python` (pocketpy), `js` (Duktape), `cc` (PicoC). Run scripts from
   the SD card: `run script.py` / `run app.js` / `run prog.c`.
-- **Diagnostics** — `selftest`, `stress`, `get`/`put` (base64 file transfer).
+- **GPIO / LED** — `gpio info|read|write|blink`, `pwm <pin> <0-255>`, `led on|off|blink`
+  (onboard LED on **GPIO4**), `rgb <r> <g> <b>`. A pin guard refuses camera/SD/PSRAM pins.
+- **Fun** — `cowsay`, `fortune`, `cmatrix` (Matrix rain), and a playable ANSI `snake`.
+- **Web dashboard** — `files start`, then `http://<ip>/dash`: live camera stream, live
+  system stats, and a browser command runner (destructive commands ask to confirm).
+- **Diagnostics** — expanded `selftest` (heap, PSRAM span, SD speed, camera, GPIO loopback,
+  NTP, partition, temp), `stress` (2-core CPU + full PSRAM sweep + SD I/O + fragmentation),
+  `get`/`put` (base64 file transfer).
 
 ## Hardware
 

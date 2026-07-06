@@ -18,6 +18,8 @@ idf_component_register(
         "lang_python.c"
         "lang_js.c"
         "lang_c.c"
+        "fun.c"
+        "gpio_cmd.c"
     INCLUDE_DIRS
         "."
         "../include"
@@ -34,6 +36,8 @@ idf_component_register(
         sdmmc
         esp_http_client
         esp_http_server
+        app_update
+        esp_partition
         espressif__esp32-camera
         nicolaielectronics__pocketpy
         duktape

@@ -12,6 +12,8 @@
 #include "python.h"
 #include "js.h"
 #include "cc.h"
+#include "fun.h"
+#include "gpio_cmd.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +37,18 @@
 #include "esp_idf_version.h"
 #include "esp_mac.h"
 #include "esp_wifi.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+
+// ESP32-classic internal temperature sensor: a deprecated ROM function that
+// returns degrees Fahrenheit. Inaccurate (±10 C) but fine as a "is it warm?"
+// readout during stress/selftest.
+#if CONFIG_IDF_TARGET_ESP32
+extern uint8_t temprature_sens_read(void);
+static inline float esp32_temp_c(void) { return (temprature_sens_read() - 32) / 1.8f; }
+#else
+static inline float esp32_temp_c(void) { return 0.0f; }
+#endif
 
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
@@ -852,14 +866,92 @@ static void do_selftest(shell_ctx_t *ctx)
     }
     CHECK("sdcard", sd_ok, "%s", sdcard_mounted() ? "mount+rw ok" : "not mounted");
 
+    // SD write/read speed: a ~256 KB temp file, timed.
+    if (sdcard_mounted()) {
+        const char *sp = SD_MOUNT "/.speedtest.tmp";
+        const size_t N = 256 * 1024;
+        char *chunk = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM);
+        if (chunk) {
+            memset(chunk, 0x5A, 4096);
+            int64_t t0 = esp_timer_get_time();
+            FILE *f = fopen(sp, "wb");
+            bool wok = false;
+            if (f) {
+                size_t w = 0;
+                while (w < N && fwrite(chunk, 1, 4096, f) == 4096) w += 4096;
+                fclose(f);
+                wok = (w >= N);
+            }
+            int64_t t1 = esp_timer_get_time();
+            double wmb = wok ? (N / 1048576.0) / ((t1 - t0) / 1e6) : 0;
+            // read back
+            int64_t t2 = esp_timer_get_time();
+            size_t rd = 0; f = fopen(sp, "rb");
+            if (f) { size_t r; while ((r = fread(chunk, 1, 4096, f)) > 0) rd += r; fclose(f); }
+            int64_t t3 = esp_timer_get_time();
+            double rmb = (rd >= N) ? (N / 1048576.0) / ((t3 - t2) / 1e6) : 0;
+            unlink(sp);
+            free(chunk);
+            CHECK("sd-speed", (wok && rd >= N), "write %.2f MB/s, read %.2f MB/s", wmb, rmb);
+        }
+    } else {
+        CHECK("sd-speed", false, "no SD card");
+    }
+
+    // PSRAM full-span walk: grab the largest free block and pattern-verify it.
+    bool span_ok = false; size_t span_kb = 0;
+    if (ps_total) {
+        size_t big = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+        if (big > 64 * 1024) {
+            size_t n = big - 32 * 1024;                 // leave a margin
+            uint32_t *p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM);
+            if (p) {
+                size_t words = n / 4;
+                for (size_t i = 0; i < words; i++) p[i] = (uint32_t)(i * 2654435761u);
+                span_ok = true;
+                for (size_t i = 0; i < words; i++)
+                    if (p[i] != (uint32_t)(i * 2654435761u)) { span_ok = false; break; }
+                span_kb = n / 1024;
+                free(p);
+            }
+        }
+    }
+    CHECK("psram-span", span_ok, "%u KB walked + verified", (unsigned)span_kb);
+
     // Camera: grab one frame.
     size_t jlen = 0;
     bool cam_ok = camera_test_capture(&jlen);
     CHECK("camera", cam_ok, "%s (frame %u bytes)", camera_sensor_name(), (unsigned)jlen);
 
+    // GPIO4 loopback: drive the onboard-LED pin high/low, read it back.
+    CHECK("gpio", gpio_led_loopback(), "GPIO4 drive/read-back (onboard LED)");
+
     // Wi-Fi.
     esp_netif_ip_info_t ip; wifi_get_ip(&ip);
     CHECK("wifi", wifi_is_connected(), "ip " IPSTR, IP2STR(&ip.ip));
+
+    // NTP clock sync (needs internet on the network).
+    time_t now = time(NULL); struct tm tmv; localtime_r(&now, &tmv);
+    CHECK("ntp-clock", (tmv.tm_year + 1900) >= 2024, "%04d-%02d-%02d %02d:%02d:%02d",
+          tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+
+    // Flash / running partition (informational).
+    const esp_partition_t *run = esp_ota_get_running_partition();
+    if (run)
+        shell_printf(ctx->sock, "  [INFO] %-10s app '%s' @ 0x%06lx, %lu KB\r\n",
+                     "partition", run->label, (unsigned long)run->address,
+                     (unsigned long)(run->size / 1024));
+
+    // SD free space (informational).
+    if (sdcard_mounted()) {
+        uint64_t sdt = 0, sdf = 0; sdcard_usage(&sdt, &sdf);
+        shell_printf(ctx->sock, "  [INFO] %-10s %llu MB free of %llu MB\r\n",
+                     "sd-space", sdf / (1024 * 1024), sdt / (1024 * 1024));
+    }
+
+    // Internal temperature (informational, ESP32 sensor is rough).
+    shell_printf(ctx->sock, "  [INFO] %-10s ~%.0f C (internal, approximate)\r\n",
+                 "temp", esp32_temp_c());
 
     shell_printf(ctx->sock, "----\r\nSelf-test: %d/%d passed. %s\r\n",
                  passed, total, (passed == total) ? "All systems nominal." : "Check FAILs above.");
@@ -887,24 +979,66 @@ static void do_stress(shell_ctx_t *ctx, int argc, char **argv)
     if (secs < 1) secs = 1;
     if (secs > 60) secs = 60;
 
-    shell_printf(ctx->sock, "Stress test: %ds CPU (2 cores) + PSRAM...\r\n", secs);
+    shell_printf(ctx->sock, "Stress test: %ds CPU (2 cores) + full PSRAM + SD I/O...\r\n", secs);
 
     size_t heap_before = esp_get_free_heap_size();
+    size_t frag_before = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    float  temp_before = esp32_temp_c();
 
-    // ---- PSRAM burn: allocate & verify blocks up to ~2MB ------------------
+    // ---- PSRAM sweep: grab as much as we can, pattern-write + verify -------
+    shell_printf(ctx->sock, "  [1/3] PSRAM sweep...\r\n");
     size_t ps_tested = 0;
-    size_t block = 512 * 1024;
-    uint8_t *blocks[4] = {0};
-    for (int i = 0; i < 4; i++) {
-        blocks[i] = heap_caps_malloc(block, MALLOC_CAP_SPIRAM);
-        if (blocks[i]) {
-            memset(blocks[i], 0xA5, block);
-            volatile uint8_t v = blocks[i][block - 1];
-            if (v == 0xA5) ps_tested += block;
+    #define PS_MAXBLK 8
+    uint8_t *blocks[PS_MAXBLK] = {0};
+    int nblk = 0;
+    for (nblk = 0; nblk < PS_MAXBLK; nblk++) {
+        size_t big = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+        if (big < 96 * 1024) break;
+        size_t bsz = big - 64 * 1024;               // leave margin for other allocs
+        blocks[nblk] = heap_caps_malloc(bsz, MALLOC_CAP_SPIRAM);
+        if (!blocks[nblk]) break;
+        memset(blocks[nblk], 0xA5, bsz);
+        bool ok = true;
+        for (size_t i = 0; i < bsz; i += 4096) if (blocks[nblk][i] != 0xA5) { ok = false; break; }
+        if (blocks[nblk][bsz - 1] != 0xA5) ok = false;
+        if (ok) ps_tested += bsz;
+    }
+
+    // ---- SD I/O burn: write + verify a multi-MB file ----------------------
+    double sd_wmb = 0, sd_rmb = 0; size_t sd_bytes = 0;
+    if (sdcard_mounted()) {
+        shell_printf(ctx->sock, "  [2/3] SD I/O burn...\r\n");
+        const char *sp = SD_MOUNT "/.stress.tmp";
+        const size_t TARGET = 2 * 1024 * 1024;      // 2 MB
+        char *chunk = heap_caps_malloc(8192, MALLOC_CAP_SPIRAM);
+        if (chunk) {
+            for (int i = 0; i < 8192; i++) chunk[i] = (char)(i & 0xFF);
+            int64_t t0 = esp_timer_get_time();
+            FILE *f = fopen(sp, "wb"); size_t w = 0;
+            if (f) { while (w < TARGET && fwrite(chunk, 1, 8192, f) == 8192) w += 8192; fclose(f); }
+            int64_t t1 = esp_timer_get_time();
+            bool vok = true; size_t rd = 0;
+            f = fopen(sp, "rb");
+            if (f) {
+                size_t r;
+                while ((r = fread(chunk, 1, 8192, f)) > 0) {
+                    for (size_t i = 0; i < r; i++) if (chunk[i] != (char)((rd + i) & 0xFF)) { vok = false; break; }
+                    rd += r;
+                    if (!vok) break;
+                }
+                fclose(f);
+            }
+            int64_t t2 = esp_timer_get_time();
+            if (w >= TARGET) sd_wmb = (w / 1048576.0) / ((t1 - t0) / 1e6);
+            if (vok && rd >= TARGET) sd_rmb = (rd / 1048576.0) / ((t2 - t1) / 1e6);
+            sd_bytes = w;
+            unlink(sp);
+            free(chunk);
         }
     }
 
     // ---- CPU burn on both cores ------------------------------------------
+    shell_printf(ctx->sock, "  [3/3] CPU burn on both cores (%ds)...\r\n", secs);
     stress_worker_t main_w = { .iters = 0, .run = true };
     stress_worker_t other_w = { .iters = 0, .run = true };
     int mycore = xPortGetCoreID();
@@ -921,23 +1055,36 @@ static void do_stress(shell_ctx_t *ctx, int argc, char **argv)
     other_w.run = false;
     vTaskDelay(pdMS_TO_TICKS(50));   // let the worker exit
 
+    double mops_a = (double)main_w.iters  / (secs * 1e6);
+    double mops_b = (double)other_w.iters / (secs * 1e6);
     uint64_t total_iters = main_w.iters + other_w.iters;
-    double mops = (double)total_iters / (secs * 1e6);
 
-    // Free the PSRAM blocks BEFORE measuring, so the leak check compares
-    // like-for-like (measuring while they're still held looks like a 2MB leak).
-    for (int i = 0; i < 4; i++) free(blocks[i]);
+    // Free PSRAM BEFORE measuring so the leak check compares like-for-like.
+    for (int i = 0; i < nblk; i++) free(blocks[i]);
     size_t heap_after = esp_get_free_heap_size();
+    size_t frag_after = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    float  temp_after = esp32_temp_c();
 
     shell_printf(ctx->sock, "----\r\n");
-    shell_printf(ctx->sock, "CPU:   %llu iterations, %.1f Mops/s across 2 cores\r\n",
-                 (unsigned long long)total_iters, mops);
-    shell_printf(ctx->sock, "PSRAM: %u KB allocated + verified (0xA5 pattern)\r\n",
-                 (unsigned)(ps_tested / 1024));
-    shell_printf(ctx->sock, "Heap:  %u B free before, %u B after (leak check)\r\n",
+    shell_printf(ctx->sock, "CPU:   %llu iters, %.1f Mops/s total  (core%d %.1f + core%d %.1f)\r\n",
+                 (unsigned long long)total_iters, mops_a + mops_b,
+                 mycore, mops_a, othercore, mops_b);
+    shell_printf(ctx->sock, "PSRAM: %u KB swept + verified across %d blocks\r\n",
+                 (unsigned)(ps_tested / 1024), nblk);
+    if (sd_bytes)
+        shell_printf(ctx->sock, "SD:    %u KB, write %.2f MB/s, read+verify %.2f MB/s\r\n",
+                     (unsigned)(sd_bytes / 1024), sd_wmb, sd_rmb);
+    else
+        shell_printf(ctx->sock, "SD:    (no card — skipped)\r\n");
+    shell_printf(ctx->sock, "Heap:  %u B free before / %u B after (leak check)\r\n",
                  (unsigned)heap_before, (unsigned)heap_after);
+    shell_printf(ctx->sock, "Frag:  largest internal block %u -> %u KB\r\n",
+                 (unsigned)(frag_before / 1024), (unsigned)(frag_after / 1024));
+    shell_printf(ctx->sock, "Temp:  ~%.0f C -> ~%.0f C (internal, approximate)\r\n",
+                 temp_before, temp_after);
     shell_printf(ctx->sock, "Result: %s\r\n",
-                 (ps_tested > 0 && heap_after + 4096 >= heap_before) ? "STABLE" : "CHECK");
+                 (ps_tested > 0 && heap_after + 8192 >= heap_before) ? "STABLE" : "CHECK");
+    #undef PS_MAXBLK
 }
 
 // ---- scripting languages --------------------------------------------------
@@ -1102,8 +1249,16 @@ static void do_help(shell_ctx_t *ctx)
         "  nano <file>       full-screen text editor (telnet/PuTTY, or nc raw)\r\n"
         "  get <file>        print a file as base64 (copy it off the device)\r\n"
         "  put <file>        write a file from pasted base64 (end with 'EOF')\r\n"
-        "  selftest          test PSRAM, SD, camera, Wi-Fi, heap (pass/fail)\r\n"
-        "  stress [secs]     stress CPU + PSRAM and report throughput\r\n"
+        "  selftest          full hardware test: PSRAM, SD speed, camera, GPIO, NTP...\r\n"
+        "  stress [secs]     stress CPU + PSRAM + SD I/O and report throughput\r\n"
+        "  gpio <sub> ...    read/write/blink pins (gpio info for the map)\r\n"
+        "  pwm <pin> <0-255> analog brightness on a pin (LEDC)\r\n"
+        "  led on|off|blink  drive the onboard LED (GPIO4)\r\n"
+        "  rgb <r> <g> <b>   drive the onboard RGB LED (0/1 each)\r\n"
+        "  cowsay <text>     an ASCII cow says your text\r\n"
+        "  fortune           print a random programming quote\r\n"
+        "  cmatrix           Matrix digital rain (telnet; any key stops)\r\n"
+        "  snake             play snake (telnet/PuTTY; WASD/arrows, q quits)\r\n"
         "  htop              live task/memory monitor (q to quit)\r\n"
         "  dmesg             show the boot / system log\r\n"
         "  uname -a          show system information\r\n"
@@ -1163,6 +1318,14 @@ void cmd_execute(shell_ctx_t *ctx, char *line)
     else if (!strcmp(cmd, "selftest")) do_selftest(ctx);
     else if (!strcmp(cmd, "test"))     do_selftest(ctx);
     else if (!strcmp(cmd, "stress"))   do_stress(ctx, argc, argv);
+    else if (!strcmp(cmd, "gpio"))     gpio_cmd(ctx, argc, argv);
+    else if (!strcmp(cmd, "pwm"))      gpio_pwm(ctx, argc, argv);
+    else if (!strcmp(cmd, "led"))      gpio_led(ctx, argc, argv);
+    else if (!strcmp(cmd, "rgb"))      gpio_rgb(ctx, argc, argv);
+    else if (!strcmp(cmd, "cowsay"))   fun_cowsay(ctx, argc, argv);
+    else if (!strcmp(cmd, "fortune"))  fun_fortune(ctx);
+    else if (!strcmp(cmd, "cmatrix") || !strcmp(cmd, "matrix")) fun_cmatrix(ctx);
+    else if (!strcmp(cmd, "snake"))    fun_snake(ctx);
     else if (!strcmp(cmd, "htop"))     htop_run(ctx);
     else if (!strcmp(cmd, "dmesg"))    dmesg_dump(ctx->sock);
     else if (!strcmp(cmd, "uname"))    do_uname(ctx, argc, argv);

@@ -28,3 +28,11 @@ int shell_read_line(int sock, char *buf, size_t maxlen);
 // (server-echoes in char/telnet mode, relies on local echo in line mode).
 // Used by language REPLs. Returns line length, or -1 on disconnect/EOF.
 int shell_prompt_read(shell_ctx_t *ctx, const char *prompt, char *buf, size_t maxlen);
+
+// Output capture (for the web dashboard command runner). shell_capture_begin()
+// returns a negative sentinel "fd": put it in shell_ctx_t.sock, run cmd_execute(),
+// then shell_capture_end() detaches and returns the accumulated output (caller
+// must free() it). Any shell output to a sock < 0 is buffered, not sent, and any
+// input read from a sock < 0 returns EOF. Returns -1 if no capture slot is free.
+int   shell_capture_begin(void);
+char *shell_capture_end(int fd, size_t *len_out);
