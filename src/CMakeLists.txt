@@ -22,6 +22,7 @@ idf_component_register(
         "gpio_cmd.c"
         "unixcmds.c"
         "qrcmd.c"
+        "captive.c"
     INCLUDE_DIRS
         "."
         "../include"

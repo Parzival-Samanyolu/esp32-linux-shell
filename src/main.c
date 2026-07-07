@@ -24,6 +24,8 @@
 #include "python.h"
 #include "js.h"
 #include "cc.h"
+#include "fileserver.h"
+#include "captive.h"
 
 static const char *TAG = "main";
 
@@ -91,6 +93,10 @@ void app_main(void)
     // ---- TCP shell server -------------------------------------------------
     shell_start();
     dmesg_add("shell: listening on tcp/%d", SHELL_PORT);
+
+    // ---- Web server + captive portal (always on so /gui works out of the box) --
+    fileserver_start();          // port 80: /gui desktop, /dash, file manager
+    captive_portal_start();      // joining the hotspot pops open the desktop
 
     ESP_LOGI(TAG, "System ready. Connect with:  nc <IP> %d", SHELL_PORT);
 }

@@ -601,6 +601,19 @@ static esp_err_t qr_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// Captive-portal catch-all: any unknown URL (the OS connectivity checks like
+// /generate_204, /hotspot-detect.html, /ncsi.txt) 302-redirects to the desktop.
+// Relative Location so it works whatever host the client's check requested.
+static esp_err_t captive_redirect(httpd_req_t *req, httpd_err_code_t err)
+{
+    (void)err;
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "/gui");
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_sendstr(req, "ESP32-OS \xe2\x86\x92 /gui");
+    return ESP_OK;
+}
+
 esp_err_t fileserver_start(void)
 {
     if (s_httpd) return ESP_OK;
@@ -637,6 +650,8 @@ esp_err_t fileserver_start(void)
     httpd_register_uri_handler(s_httpd, &u_ls);
     httpd_register_uri_handler(s_httpd, &u_save);
     httpd_register_uri_handler(s_httpd, &u_qr);
+
+    httpd_register_err_handler(s_httpd, HTTPD_404_NOT_FOUND, captive_redirect);
 
     dmesg_add("files: server started on tcp/%d", FS_PORT);
     return ESP_OK;
