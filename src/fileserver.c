@@ -6,6 +6,7 @@
 #include "wifi.h"
 #include "sdcard.h"
 #include "camera.h"
+#include "temp.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -402,11 +403,11 @@ static esp_err_t stats_handler(httpd_req_t *req)
     int n = snprintf(j, sizeof(j),
         "{\"heap_free\":%u,\"heap_total\":%u,\"psram_free\":%u,\"psram_total\":%u,"
         "\"uptime\":%u,\"sd_free\":%llu,\"sd_total\":%llu,\"cam\":\"%s\",\"ip\":\"" IPSTR "\","
-        "\"stream\":%s}",
+        "\"stream\":%s,\"temp\":%.1f}",
         (unsigned)ifr, (unsigned)it, (unsigned)pf, (unsigned)pt, (unsigned)up,
         (unsigned long long)sdf, (unsigned long long)sdt,
         camera_ready() ? camera_sensor_name() : "none", IP2STR(&ip.ip),
-        camera_stream_running() ? "true" : "false");
+        camera_stream_running() ? "true" : "false", temp_read_c());
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, j, n);
     return ESP_OK;

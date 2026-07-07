@@ -16,6 +16,7 @@
 #include "gpio_cmd.h"
 #include "unixcmds.h"
 #include "qrcmd.h"
+#include "temp.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,15 +43,8 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 
-// ESP32-classic internal temperature sensor: a deprecated ROM function that
-// returns degrees Fahrenheit. Inaccurate (±10 C) but fine as a "is it warm?"
-// readout during stress/selftest.
-#if CONFIG_IDF_TARGET_ESP32
-extern uint8_t temprature_sens_read(void);
-static inline float esp32_temp_c(void) { return (temprature_sens_read() - 32) / 1.8f; }
-#else
-static inline float esp32_temp_c(void) { return 0.0f; }
-#endif
+// Internal die temperature (calibrated) — see temp.c.
+static inline float esp32_temp_c(void) { return temp_read_c(); }
 
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
@@ -1259,6 +1253,30 @@ static void do_date(shell_ctx_t *ctx)
     }
 }
 
+// temp — show the (calibrated) internal die temperature, or calibrate it.
+static void do_temp(shell_ctx_t *ctx, int argc, char **argv)
+{
+    if (argc >= 3 && !strcmp(argv[1], "cal")) {
+        float real = atof(argv[2]);
+        if (real < -40 || real > 125) { shell_printf(ctx->sock, "temp: give a real temperature in C (e.g. temp cal 26)\r\n"); return; }
+        temp_calibrate(real);
+        shell_printf(ctx->sock, "Calibrated: raw %.1f C, now reads %.1f C (offset %+.1f C, saved)\r\n",
+                     temp_raw_c(), temp_read_c(), temp_offset());
+        return;
+    }
+    if (argc >= 2 && !strcmp(argv[1], "reset")) {
+        temp_calibrate(temp_raw_c());   // offset 0
+        shell_printf(ctx->sock, "Calibration cleared (offset 0).\r\n");
+        return;
+    }
+    shell_printf(ctx->sock, "Chip temperature: %.1f C   (raw %.1f C, offset %+.1f C)\r\n",
+                 temp_read_c(), temp_raw_c(), temp_offset());
+    if (temp_offset() == 0.0f)
+        shell_printf(ctx->sock,
+            "Uncalibrated — the raw sensor is offset per-chip. Measure the real temp\r\n"
+            "(ideally right after a cold power-on) and run:  temp cal <celsius>\r\n");
+}
+
 // Enable the interactive line editor (arrow-key history) for THIS session —
 // for raw-mode netcat users who can't run a telnet client.
 static void do_arrows(shell_ctx_t *ctx)
@@ -1381,6 +1399,7 @@ static void do_help(shell_ctx_t *ctx)
         "  whoami / id       show the current user\r\n"
         "  hostname          show the hostname\r\n"
         "  date              show the current date/time (NTP)\r\n"
+        "  temp [cal <C>]    show chip temperature; 'temp cal 26' calibrates it\r\n"
         "  ps                list running tasks\r\n"
         "  neofetch          system summary with logo\r\n"
         "  arrows            enable arrow-key history (raw-mode terminals)\r\n"
@@ -1463,6 +1482,7 @@ void cmd_execute(shell_ctx_t *ctx, char *line)
     else if (!strcmp(cmd, "hostname")) do_hostname(ctx);
     else if (!strcmp(cmd, "id"))       do_id(ctx);
     else if (!strcmp(cmd, "date"))     do_date(ctx);
+    else if (!strcmp(cmd, "temp"))     do_temp(ctx, argc, argv);
     else if (!strcmp(cmd, "ps"))       do_ps(ctx);
     else if (!strcmp(cmd, "neofetch")) do_neofetch(ctx);
     else if (!strcmp(cmd, "arrows"))   do_arrows(ctx);

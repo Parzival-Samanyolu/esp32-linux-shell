@@ -256,10 +256,8 @@ reg({id:'monitor',name:'System Monitor',icon:'📊',w:520,h:400,render(w){
     series.forEach(([k,col,mx])=>{const a=H[k];if(a.length<2)return;ctx.strokeStyle=col;ctx.lineWidth=1.6;ctx.beginPath();
       a.forEach((v,i)=>{const x=i/(MAX-1)*cv.width,y=cv.height-(v/mx)*cv.height*0.95-2;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();});}
   async function tick(){let s;try{s=await API.stats();}catch(e){return;}
-    H.heap.push(s.heap_free);H.ps.push(s.psram_free);H.temp.push(0);
+    H.heap.push(s.heap_free);H.ps.push(s.psram_free);H.temp.push(s.temp||0);
     Object.values(H).forEach(a=>{while(a.length>MAX)a.shift();});
-    // temp from cmd? stats has none; approximate via selftest is heavy — read from tray temp value
-    H.temp[H.temp.length-1]=window.LAST_TEMP||24;
     draw();
     $('#mstats',w.body).innerHTML=
       `<div class=stat><span>Heap free</span><b>${fmtB(s.heap_free)} / ${fmtB(s.heap_total)}</b></div>`+
@@ -539,7 +537,8 @@ function buildIcons(){const ic=$('#icons'),sm=$('#smgrid');
 $('#start').onclick=()=>$('#startmenu').classList.toggle('open');
 document.addEventListener('click',e=>{if(!e.target.closest('#startmenu')&&!e.target.closest('#start'))$('#startmenu').classList.remove('open');});
 async function tray(){const c=new Date();$('#tr-clock').textContent=(''+c.getHours()).padStart(2,'0')+':'+(''+c.getMinutes()).padStart(2,'0');
-  try{const s=await API.stats();$('#tr-wifi').textContent='📶 '+s.ip;}catch(e){$('#tr-wifi').textContent='📶 –';}}
+  try{const s=await API.stats();$('#tr-wifi').textContent='📶 '+s.ip;
+    if(s.temp!==undefined)$('#tr-temp').textContent='🌡 '+s.temp.toFixed(0)+'°';}catch(e){$('#tr-wifi').textContent='📶 –';}}
 // temp comes from htop-style read; poll via a lightweight cmd occasionally
 async function trayTemp(){try{const r=await API.cmd('date');}catch(e){} }
 function boot(){buildIcons();tray();setInterval(tray,5000);

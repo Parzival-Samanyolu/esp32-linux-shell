@@ -23,6 +23,7 @@ idf_component_register(
         "unixcmds.c"
         "qrcmd.c"
         "captive.c"
+        "temp.c"
     INCLUDE_DIRS
         "."
         "../include"

@@ -26,6 +26,7 @@
 #include "cc.h"
 #include "fileserver.h"
 #include "captive.h"
+#include "temp.h"
 
 static const char *TAG = "main";
 
@@ -43,6 +44,7 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
     dmesg_add("nvs: initialised");
+    temp_init();   // load the saved temperature calibration offset
 
     // ---- Report PSRAM so we know the 8MB is live --------------------------
     size_t psram = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
